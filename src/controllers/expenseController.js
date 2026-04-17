@@ -52,8 +52,12 @@ exports.addExpense = async (req, res) => {
       category
     });
 
-    const populatedExpense = await expense.populate('paidBy', 'name avatar').populate('splitDetails.user', 'name avatar');
-    res.status(201).json(populatedExpense);
+    await expense.populate([
+      { path: 'paidBy', select: 'name avatar' },
+      { path: 'splitDetails.user', select: 'name avatar' }
+    ]);
+
+    res.status(201).json(expense);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
