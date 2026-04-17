@@ -52,10 +52,14 @@ exports.addExpense = async (req, res) => {
       category
     });
 
-    await expense.populate([
-      { path: 'paidBy', select: 'name avatar' },
-      { path: 'splitDetails.user', select: 'name avatar' }
-    ]);
+    try {
+      await Expense.populate(expense, [
+        { path: 'paidBy', select: 'name avatar' },
+        { path: 'splitDetails.user', select: 'name avatar' }
+      ]);
+    } catch (populateError) {
+      console.error('Expense population failed:', populateError);
+    }
 
     res.status(201).json(expense);
   } catch (error) {
@@ -73,8 +77,10 @@ exports.getGroupExpenses = async (req, res) => {
     }
 
     const expenses = await Expense.find({ groupId: req.params.groupId })
-      .populate('paidBy', 'name avatar')
-      .populate('splitDetails.user', 'name avatar')
+      .populate([
+        { path: 'paidBy', select: 'name avatar' },
+        { path: 'splitDetails.user', select: 'name avatar' }
+      ])
       .sort({ createdAt: -1 });
     res.json(expenses);
   } catch (error) {

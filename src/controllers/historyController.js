@@ -38,14 +38,18 @@ exports.getHistory = async (req, res) => {
 
     const [expenses, settlements] = await Promise.all([
       Expense.find(expenseQuery)
-        .populate('paidBy', 'name avatar')
-        .populate('groupId', 'name')
-        .populate('splitDetails.user', 'name avatar')
+        .populate([
+          { path: 'paidBy', select: 'name avatar' },
+          { path: 'groupId', select: 'name' },
+          { path: 'splitDetails.user', select: 'name avatar' }
+        ])
         .sort({ createdAt: -1 }),
       Settlement.find(settlementQuery)
-        .populate('payerId', 'name avatar')
-        .populate('receiverId', 'name avatar')
-        .populate('groupId', 'name')
+        .populate([
+          { path: 'payerId', select: 'name avatar' },
+          { path: 'receiverId', select: 'name avatar' },
+          { path: 'groupId', select: 'name' }
+        ])
         .sort({ createdAt: -1 })
     ]);
 

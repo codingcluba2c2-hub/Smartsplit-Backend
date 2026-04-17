@@ -47,8 +47,10 @@ exports.getGroupSettlements = async (req, res) => {
     if (!isMember) return res.status(403).json({ message: 'Not authorized to view settlements' });
 
     const settlements = await Settlement.find({ groupId: req.params.groupId })
-      .populate('payerId', 'name avatar email')
-      .populate('receiverId', 'name avatar email')
+      .populate([
+        { path: 'payerId', select: 'name avatar email' },
+        { path: 'receiverId', select: 'name avatar email' }
+      ])
       .sort({ createdAt: -1 });
 
     res.json(settlements);

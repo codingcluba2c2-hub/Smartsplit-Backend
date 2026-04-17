@@ -35,7 +35,7 @@ exports.createGroup = async (req, res) => {
       createdBy: req.user._id
     });
 
-    const populatedGroup = await group.populate('members.user', 'name email avatar');
+    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar' });
     res.status(201).json(populatedGroup);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -45,8 +45,10 @@ exports.createGroup = async (req, res) => {
 exports.getGroups = async (req, res) => {
   try {
     const groups = await Group.find({ 'members.user': req.user._id })
-      .populate('members.user', 'name email avatar')
-      .populate('createdBy', 'name');
+      .populate([
+        { path: 'members.user', select: 'name email avatar' },
+        { path: 'createdBy', select: 'name' }
+      ]);
 
     const groupsWithSummary = await Promise.all(groups.map(async (group) => {
       const [expenses, settlements] = await Promise.all([
@@ -66,8 +68,10 @@ exports.getGroups = async (req, res) => {
 exports.getGroupById = async (req, res) => {
   try {
     const group = await Group.findById(req.params.id)
-      .populate('members.user', 'name email avatar')
-      .populate('createdBy', 'name');
+      .populate([
+        { path: 'members.user', select: 'name email avatar' },
+        { path: 'createdBy', select: 'name' }
+      ]);
 
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
@@ -76,8 +80,10 @@ exports.getGroupById = async (req, res) => {
 
     const [expenses, settlements] = await Promise.all([
       Expense.find({ groupId: group._id })
-        .populate('paidBy', 'name avatar')
-        .populate('splitDetails.user', 'name avatar'),
+        .populate([
+          { path: 'paidBy', select: 'name avatar' },
+          { path: 'splitDetails.user', select: 'name avatar' }
+        ]),
       Settlement.find({ groupId: group._id })
     ]);
 
@@ -129,7 +135,7 @@ exports.addMember = async (req, res) => {
     group.members.push({ user: userToAdd._id, role: 'member', joinedAt: new Date() });
     await group.save();
 
-    const populatedGroup = await group.populate('members.user', 'name email avatar');
+    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar' });
     res.json(populatedGroup.members);
   } catch (error) {
     res.status(500).json({ message: error.message });
