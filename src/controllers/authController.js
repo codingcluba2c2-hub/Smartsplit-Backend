@@ -187,7 +187,8 @@ exports.googleLogin = async (req, res) => {
       token: generateToken(user._id),
     });
   } catch (error) {
-    res.status(401).json({ message: 'Google authentication failed' });
+    console.error('Google authentication error:', error);
+    res.status(401).json({ message: error.message || 'Google authentication failed' });
   }
 };
 
