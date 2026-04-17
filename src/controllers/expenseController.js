@@ -38,7 +38,7 @@ exports.addExpense = async (req, res) => {
     }
 
     const amountTotal = splitDetails.reduce((sum, split) => sum + Number(split.amount), 0);
-    if (Math.abs(amountTotal - Number(amount)) > 0.01) {
+    if (Math.abs(amountTotal - Number(amount)) > 0.1) {
       return res.status(400).json({ message: 'Split totals must equal expense amount' });
     }
 
