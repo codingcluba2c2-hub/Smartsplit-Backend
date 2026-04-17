@@ -37,8 +37,14 @@ app.get('/health', (req, res) => res.json({ status: 'OK' }));
 
 // Database connection
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = "mongodb+srv://akhlaquerahman0786_db_user:SmartSplit123@smartsplitcluster.3dpujul.mongodb.net/?appName=SmartSplitCluster";
-mongoose.connect(process.env.MONGODB_URI || MONGODB_URI)
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  console.error('Missing MONGODB_URI environment variable. Set it in your local .env or deployment environment.');
+  process.exit(1);
+}
+
+mongoose.connect(MONGODB_URI)
   .then(() => {
     console.log('Connected to MongoDB');
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
