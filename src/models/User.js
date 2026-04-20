@@ -40,12 +40,19 @@ const userSchema = new mongoose.Schema({
   isVerified: {
     type: Boolean,
     default: false
+  },
+  role: {
+    type: String,
+    enum: ['user', 'admin'],
+    default: 'user'
+  },
+  isBlocked: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true
 });
-
-// Hash password before saving
 userSchema.pre('save', async function() {
   if (!this.isModified('password')) return;
   this.password = await bcrypt.hash(this.password, 12);

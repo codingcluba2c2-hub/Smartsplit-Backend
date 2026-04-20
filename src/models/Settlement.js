@@ -41,6 +41,14 @@ const settlementSchema = new mongoose.Schema({
   },
   settledAt: {
     type: Date
+  },
+  isFlagged: {
+    type: Boolean,
+    default: false
+  },
+  flagReason: {
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true

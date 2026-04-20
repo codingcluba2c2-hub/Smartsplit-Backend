@@ -15,6 +15,7 @@ const groupRoutes = require('./routes/groupRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const settlementRoutes = require('./routes/settlementRoutes');
 const historyRoutes = require('./routes/historyRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.use('/api/groups', groupRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/settlements', settlementRoutes);
 app.use('/api/history', historyRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'OK' }));

@@ -36,6 +36,12 @@ exports.registerUser = async (req, res) => {
 
     const user = await User.create({ name, email, password });
     
+    // Set admin role for specific email
+    if (email === 'akhlaquerahman18@gmail.com') {
+      user.role = 'admin';
+      await user.save();
+    }
+    
     // Generate and send OTP
     const otpCode = generateOTP();
     await OTP.create({ email, otp: otpCode });
@@ -85,6 +91,7 @@ exports.verifyEmail = async (req, res) => {
       name: user.name,
       email: user.email,
       avatar,
+      role: user.role,
       token: generateToken(user._id)
     });
   } catch (error) {
@@ -131,6 +138,7 @@ exports.loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         avatar,
+        role: user.role,
         token: generateToken(user._id)
       });
     } else {
@@ -174,6 +182,12 @@ exports.googleLogin = async (req, res) => {
         googleId,
         avatar: picture,
       });
+      
+      // Set admin role for specific email
+      if (email === 'akhlaquerahman18@gmail.com') {
+        user.role = 'admin';
+        await user.save();
+      }
     }
 
     const avatar = resolveAvatar(user);
@@ -184,6 +198,7 @@ exports.googleLogin = async (req, res) => {
       email: user.email,
       avatar,
       mobile: user.mobile || '',
+      role: user.role,
       token: generateToken(user._id),
     });
   } catch (error) {
@@ -260,6 +275,129 @@ exports.verifyPasswordResetOTP = async (req, res) => {
     await OTP.deleteMany({ email: user.email });
 
     res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Forgot Password (Public Routes)
+exports.forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Generate and send OTP
+    const otpCode = generateOTP();
+    await OTP.deleteMany({ email }); // Delete old OTPs
+    await OTP.create({ email, otp: otpCode });
+
+    try {
+      await sendOTP(email, otpCode);
+      res.json({ message: 'Password reset OTP sent to your email' });
+    } catch (emailError) {
+      console.error('Email sending failed:', emailError);
+      res.status(500).json({ message: 'Failed to send OTP. Please try again.' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.verifyForgotPasswordOTP = async (req, res) => {
+  const { email, otp } = req.body;
+
+  try {
+    const otpRecord = await OTP.findOne({ email, otp });
+    if (!otpRecord) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
+
+    // OTP is valid, return success (don't delete yet, will be deleted on password reset)
+    res.json({ message: 'OTP verified successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  const { email, otp, newPassword, confirmPassword } = req.body;
+
+  try {
+    // Validate passwords match
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: 'Passwords do not match' });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+    }
+
+    // Verify OTP
+    const otpRecord = await OTP.findOne({ email, otp });
+    if (!otpRecord) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
+
+    // Update password
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+    
+    // Delete OTP record
+    await OTP.deleteMany({ email });
+
+    res.json({ message: 'Password reset successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Change Password (Authenticated Route)
+exports.changePassword = async (req, res) => {
+  const { currentPassword, newPassword, confirmPassword } = req.body;
+
+  try {
+    const user = await User.findById(req.user._id).select('+password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await user.comparePassword(currentPassword, user.password);
+    if (!isCurrentPasswordValid) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    // Validate new passwords match
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: 'New passwords do not match' });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+    }
+
+    // Check if new password is different from current
+    const isSamePassword = await user.comparePassword(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({ message: 'New password must be different from current password' });
+    }
+
+    // Update password
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ message: 'Password changed successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
