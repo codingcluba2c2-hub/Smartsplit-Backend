@@ -41,6 +41,7 @@ exports.getHistory = async (req, res) => {
         .populate([
           { path: 'paidBy', select: 'name avatar' },
           { path: 'groupId', select: 'name' },
+          { path: 'participants', select: 'name avatar' },
           { path: 'splitDetails.user', select: 'name avatar' }
         ])
         .sort({ createdAt: -1 }),

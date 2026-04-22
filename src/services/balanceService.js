@@ -1,92 +1,258 @@
-const calculateGroupSummary = (expenses, settlements, group) => {
-  const memberIds = group.members.map(m => m.user.toString());
-  const balances = memberIds.reduce((acc, userId) => ({ ...acc, [userId]: 0 }), {});
+const Group = require('../models/Group');
+const Expense = require('../models/Expense');
+const Settlement = require('../models/Settlement');
+
+const toCents = (value) => Math.round((Number(value) || 0) * 100);
+const fromCents = (value) => Number((value / 100).toFixed(2));
+
+const getUserId = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (value._id) return value._id.toString();
+  return value.toString();
+};
+
+const getExpenseParticipantIds = (expense) => {
+  if (Array.isArray(expense.participants) && expense.participants.length > 0) {
+    return [...new Set(expense.participants.map((participant) => getUserId(participant)).filter(Boolean))];
+  }
+
+  if (Array.isArray(expense.splitDetails) && expense.splitDetails.length > 0) {
+    return [...new Set(expense.splitDetails.map((split) => getUserId(split.user)).filter(Boolean))];
+  }
+
+  return [];
+};
+
+const getExpenseShares = (expense) => {
+  if (expense.splitType === 'unequal' && Array.isArray(expense.splitDetails) && expense.splitDetails.length > 0) {
+    return expense.splitDetails.reduce((acc, split) => {
+      const userId = getUserId(split.user);
+      if (!userId) return acc;
+      acc[userId] = (acc[userId] || 0) + toCents(split.amount);
+      return acc;
+    }, {});
+  }
+
+  const participantIds = getExpenseParticipantIds(expense);
+  if (participantIds.length === 0) {
+    return {};
+  }
+
+  const totalAmountCents = toCents(expense.amount);
+  const baseShare = Math.floor(totalAmountCents / participantIds.length);
+  const remainder = totalAmountCents - (baseShare * participantIds.length);
+
+  return participantIds.reduce((acc, userId, index) => {
+    acc[userId] = baseShare + (index === participantIds.length - 1 ? remainder : 0);
+    return acc;
+  }, {});
+};
+
+const buildGroupBalanceLedger = (expenses, members, settlements = []) => {
+  const memberIds = members.map((member) => getUserId(member.user || member)).filter(Boolean);
+  const ledger = memberIds.reduce((acc, userId) => {
+    acc[userId] = {
+      totalShareCents: 0,
+      totalPaidCents: 0,
+      settlementPaidCents: 0,
+      settlementReceivedCents: 0,
+      balanceCents: 0,
+      netBalanceCents: 0
+    };
+    return acc;
+  }, {});
 
   expenses.forEach((expense) => {
-    const paidBy = expense.paidBy.toString();
-    balances[paidBy] += expense.amount;
-    expense.splitDetails.forEach((split) => {
-      balances[split.user.toString()] -= split.amount;
+    const paidBy = getUserId(expense.paidBy);
+    const amountCents = toCents(expense.amount);
+
+    if (paidBy) {
+      if (!ledger[paidBy]) {
+        ledger[paidBy] = {
+          totalShareCents: 0,
+          totalPaidCents: 0,
+          settlementPaidCents: 0,
+          settlementReceivedCents: 0,
+          balanceCents: 0,
+          netBalanceCents: 0
+        };
+      }
+      ledger[paidBy].totalPaidCents += amountCents;
+    }
+
+    const shares = getExpenseShares(expense);
+    Object.entries(shares).forEach(([userId, shareCents]) => {
+      if (!ledger[userId]) {
+        ledger[userId] = {
+          totalShareCents: 0,
+          totalPaidCents: 0,
+          settlementPaidCents: 0,
+          settlementReceivedCents: 0,
+          balanceCents: 0,
+          netBalanceCents: 0
+        };
+      }
+      ledger[userId].totalShareCents += shareCents;
     });
+  });
+
+  Object.values(ledger).forEach((entry) => {
+    entry.balanceCents = entry.totalPaidCents - entry.totalShareCents;
+    entry.netBalanceCents = entry.balanceCents;
   });
 
   settlements
     .filter((settlement) => settlement.status === 'completed')
     .forEach((settlement) => {
-      balances[settlement.payerId.toString()] -= settlement.amount;
-      balances[settlement.receiverId.toString()] += settlement.amount;
+      const payerId = getUserId(settlement.payerId);
+      const receiverId = getUserId(settlement.receiverId);
+      const amountCents = toCents(settlement.amount);
+
+      if (payerId) {
+        if (!ledger[payerId]) {
+          ledger[payerId] = {
+            totalShareCents: 0,
+            totalPaidCents: 0,
+            settlementPaidCents: 0,
+            settlementReceivedCents: 0,
+            balanceCents: 0,
+            netBalanceCents: 0
+          };
+        }
+        ledger[payerId].settlementPaidCents += amountCents;
+        ledger[payerId].netBalanceCents -= amountCents;
+      }
+
+      if (receiverId) {
+        if (!ledger[receiverId]) {
+          ledger[receiverId] = {
+            totalShareCents: 0,
+            totalPaidCents: 0,
+            settlementPaidCents: 0,
+            settlementReceivedCents: 0,
+            balanceCents: 0,
+            netBalanceCents: 0
+          };
+        }
+        ledger[receiverId].settlementReceivedCents += amountCents;
+        ledger[receiverId].netBalanceCents += amountCents;
+      }
     });
 
-  const members = group.members.map((member) => ({
-    ...member.toObject(),
-    balance: balances[member.user.toString()] || 0
-  }));
+  return ledger;
+};
 
-  const totalExpense = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+const mapMemberBalances = (group, ledger) => group.members.map((member) => {
+  const memberObject = typeof member.toObject === 'function' ? member.toObject() : { ...member };
+  const userId = getUserId(member.user);
+  const balance = ledger[userId] || {
+    totalShareCents: 0,
+    totalPaidCents: 0,
+    settlementPaidCents: 0,
+    settlementReceivedCents: 0,
+    balanceCents: 0,
+    netBalanceCents: 0
+  };
+
+  return {
+    ...memberObject,
+    totalShare: fromCents(balance.totalShareCents),
+    totalPaid: fromCents(balance.totalPaidCents),
+    settlementPaid: fromCents(balance.settlementPaidCents),
+    settlementReceived: fromCents(balance.settlementReceivedCents),
+    balance: fromCents(balance.balanceCents),
+    netBalance: fromCents(balance.netBalanceCents)
+  };
+});
+
+const calculateGroupSummary = (expenses, settlements, group) => {
+  const ledger = buildGroupBalanceLedger(expenses, group.members, settlements);
+  const memberBalances = mapMemberBalances(group, ledger);
+  const totalExpense = fromCents(expenses.reduce((sum, expense) => sum + toCents(expense.amount), 0));
   const completedSettlements = settlements.filter((settlement) => settlement.status === 'completed');
   const pendingSettlements = settlements.filter((settlement) => settlement.status === 'pending');
 
-  const paidTotals = expenses.reduce((totals, expense) => {
-    const payer = expense.paidBy.toString();
-    totals[payer] = (totals[payer] || 0) + expense.amount;
-    return totals;
-  }, {});
+  const paidMost = [...memberBalances]
+    .sort((a, b) => b.totalPaid - a.totalPaid)
+    .find((member) => member.totalPaid > 0);
+  const owesMost = [...memberBalances]
+    .sort((a, b) => a.netBalance - b.netBalance)
+    .find((member) => member.netBalance < 0);
 
-  const owesTotals = members.reduce((totals, member) => {
-    const value = member.balance;
-    totals[member.user.toString()] = value;
-    return totals;
-  }, {});
-
-  const maxPaid = Object.entries(paidTotals).sort((a, b) => b[1] - a[1])[0] || [null, 0];
-  const maxOwed = Object.entries(owesTotals).sort((a, b) => a[1] - b[1])[0] || [null, 0];
-
-  const summary = {
+  return {
     totalExpense,
-    totalMembers: memberIds.length,
+    totalMembers: group.members.length,
     totalSettlements: completedSettlements.length,
     pendingSettlements: pendingSettlements.length,
-    paidMost: maxPaid[0] ? { userId: maxPaid[0], amount: maxPaid[1] } : null,
-    owesMost: maxOwed[0] ? { userId: maxOwed[0], amount: maxOwed[1] } : null,
-    memberBalances: members,
+    paidMost: paidMost ? { userId: getUserId(paidMost.user), amount: paidMost.totalPaid } : null,
+    owesMost: owesMost ? { userId: getUserId(owesMost.user), amount: Math.abs(owesMost.netBalance) } : null,
+    memberBalances,
     groupTotal: totalExpense,
-    totalOwed: Object.values(balances).filter((value) => value < 0).reduce((sum, value) => sum + Math.abs(value), 0),
-    totalOwedToGroup: Object.values(balances).filter((value) => value > 0).reduce((sum, value) => sum + value, 0)
+    totalOwed: fromCents(memberBalances
+      .filter((member) => member.netBalance < 0)
+      .reduce((sum, member) => sum + toCents(Math.abs(member.netBalance)), 0)),
+    totalOwedToGroup: fromCents(memberBalances
+      .filter((member) => member.netBalance > 0)
+      .reduce((sum, member) => sum + toCents(member.netBalance), 0))
   };
+};
 
-  return summary;
+const calculateGroupBalances = async (groupId) => {
+  const group = await Group.findById(groupId).populate('members.user', 'name email avatar');
+  if (!group) {
+    throw new Error('Group not found');
+  }
+
+  const [expenses, settlements] = await Promise.all([
+    Expense.find({ groupId }),
+    Settlement.find({ groupId })
+  ]);
+
+  return calculateGroupSummary(expenses, settlements, group);
 };
 
 const calculateDirectNet = (expenses, settlements, fromUserId, toUserId) => {
-  let net = 0;
+  let netCents = 0;
 
   expenses.forEach((expense) => {
-    const paidBy = expense.paidBy.toString();
-    expense.splitDetails.forEach((split) => {
-      const splitUser = split.user.toString();
-      if (splitUser === fromUserId && paidBy === toUserId) {
-        net += split.amount;
-      }
-      if (splitUser === toUserId && paidBy === fromUserId) {
-        net -= split.amount;
-      }
-    });
+    const paidBy = getUserId(expense.paidBy);
+    const shares = getExpenseShares(expense);
+
+    if (paidBy === toUserId && shares[fromUserId]) {
+      netCents += shares[fromUserId];
+    }
+
+    if (paidBy === fromUserId && shares[toUserId]) {
+      netCents -= shares[toUserId];
+    }
   });
 
   settlements
     .filter((settlement) => settlement.status === 'completed')
     .forEach((settlement) => {
-      const payer = settlement.payerId.toString();
-      const receiver = settlement.receiverId.toString();
+      const payer = getUserId(settlement.payerId);
+      const receiver = getUserId(settlement.receiverId);
+      const amountCents = toCents(settlement.amount);
+
       if (payer === fromUserId && receiver === toUserId) {
-        net -= settlement.amount;
+        netCents -= amountCents;
       }
       if (payer === toUserId && receiver === fromUserId) {
-        net += settlement.amount;
+        netCents += amountCents;
       }
     });
 
-  return net;
+  return fromCents(netCents);
 };
 
-module.exports = { calculateGroupSummary, calculateDirectNet };
+module.exports = {
+  calculateGroupBalances,
+  calculateGroupSummary,
+  calculateDirectNet,
+  buildGroupBalanceLedger,
+  getExpenseShares,
+  getExpenseParticipantIds,
+  toCents,
+  fromCents
+};

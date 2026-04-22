@@ -1,6 +1,7 @@
 const Expense = require('../models/Expense');
 const Group = require('../models/Group');
 const { calculateSettlements } = require('../services/settlementService');
+const { getExpenseShares, fromCents, toCents } = require('../services/balanceService');
 
 const getMemberId = (member) => {
   if (!member.user) return null;
@@ -17,8 +18,10 @@ const isGroupMember = (group, userId) => {
   return group.members.some((member) => getMemberId(member) === normalizedId);
 };
 
+const normalizeUniqueIds = (values = []) => [...new Set(values.map((value) => value?.toString()).filter(Boolean))];
+
 exports.addExpense = async (req, res) => {
-  const { groupId, description, amount, splitType, splitDetails, category } = req.body;
+  const { groupId, description, amount, splitType = 'equal', splitDetails = [], participants = [], category } = req.body;
 
   try {
     const group = await Group.findById(groupId);
@@ -28,25 +31,42 @@ exports.addExpense = async (req, res) => {
       return res.status(403).json({ message: 'Only group members can add expenses' });
     }
 
-    if (!Array.isArray(splitDetails) || splitDetails.length === 0) {
+    const participantIds = normalizeUniqueIds(participants.length > 0 ? participants : splitDetails.map((split) => split.user));
+    if (participantIds.length === 0) {
       return res.status(400).json({ message: 'Expense participants are required' });
     }
 
-    const participantIds = splitDetails.map((split) => split.user.toString());
     if (!validateMembers(group, participantIds)) {
-      return res.status(400).json({ message: 'All split participants must be group members' });
+      return res.status(400).json({ message: 'All participants must be group members' });
     }
 
-    const amountTotal = splitDetails.reduce((sum, split) => sum + Number(split.amount), 0);
-    if (Math.abs(amountTotal - Number(amount)) > 0.1) {
-      return res.status(400).json({ message: 'Split totals must equal expense amount' });
+    const parsedAmount = Number(amount);
+    if (!parsedAmount || parsedAmount <= 0) {
+      return res.status(400).json({ message: 'Amount must be greater than zero' });
+    }
+
+    if (splitType === 'unequal') {
+      if (!Array.isArray(splitDetails) || splitDetails.length === 0) {
+        return res.status(400).json({ message: 'Custom split details are required for unequal expenses' });
+      }
+
+      const detailParticipantIds = normalizeUniqueIds(splitDetails.map((split) => split.user));
+      if (detailParticipantIds.length !== participantIds.length || !detailParticipantIds.every((userId) => participantIds.includes(userId))) {
+        return res.status(400).json({ message: 'Participants must match the custom split users' });
+      }
+
+      const amountTotalCents = splitDetails.reduce((sum, split) => sum + toCents(split.amount), 0);
+      if (amountTotalCents !== toCents(parsedAmount)) {
+        return res.status(400).json({ message: 'Split totals must equal expense amount' });
+      }
     }
 
     const expense = await Expense.create({
       groupId,
       description,
-      amount,
+      amount: parsedAmount,
       paidBy: req.user._id,
+      participants: participantIds,
       splitType,
       splitDetails,
       category
@@ -55,6 +75,7 @@ exports.addExpense = async (req, res) => {
     try {
       await Expense.populate(expense, [
         { path: 'paidBy', select: 'name avatar' },
+        { path: 'participants', select: 'name avatar' },
         { path: 'splitDetails.user', select: 'name avatar' }
       ]);
     } catch (populateError) {
@@ -79,6 +100,7 @@ exports.getGroupExpenses = async (req, res) => {
     const expenses = await Expense.find({ groupId: req.params.groupId })
       .populate([
         { path: 'paidBy', select: 'name avatar' },
+        { path: 'participants', select: 'name avatar' },
         { path: 'splitDetails.user', select: 'name avatar' }
       ])
       .sort({ createdAt: -1 });
@@ -96,9 +118,12 @@ exports.getSettlements = async (req, res) => {
     const isMember = group.members.some((member) => member.user._id.toString() === req.user._id.toString());
     if (!isMember) return res.status(403).json({ message: 'Not authorized to view settlements' });
 
-    const expenses = await Expense.find({ groupId: req.params.groupId });
+    const [expenses, settlements] = await Promise.all([
+      Expense.find({ groupId: req.params.groupId }),
+      require('../models/Settlement').find({ groupId: req.params.groupId })
+    ]);
 
-    const transactions = calculateSettlements(expenses, group.members);
+    const transactions = calculateSettlements(expenses, group.members, settlements);
     const populatedTransactions = transactions.map((t) => ({
       ...t,
       fromUser: group.members.find((m) => m.user._id.toString() === t.from).user,

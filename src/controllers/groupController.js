@@ -82,6 +82,7 @@ exports.getGroupById = async (req, res) => {
       Expense.find({ groupId: group._id })
         .populate([
           { path: 'paidBy', select: 'name avatar' },
+          { path: 'participants', select: 'name avatar' },
           { path: 'splitDetails.user', select: 'name avatar' }
         ]),
       Settlement.find({ groupId: group._id })

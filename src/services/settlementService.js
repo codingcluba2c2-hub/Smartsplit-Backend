@@ -1,37 +1,21 @@
+const { buildGroupBalanceLedger, fromCents } = require('./balanceService');
+
 /**
  * Smart Split Algorithm
  * Calculates the minimum number of transactions needed to settle debts.
  */
-
-const calculateSettlements = (expenses, members) => {
-  const balances = {};
-
-  // Initialize balances for all group members
-  members.forEach(member => {
-    balances[member.user.toString()] = 0;
-  });
-
-  // Calculate net balance for each user
-  // balance = (amount paid) - (amount owed)
-  expenses.forEach(expense => {
-    const paidBy = expense.paidBy.toString();
-    balances[paidBy] += expense.amount;
-
-    expense.splitDetails.forEach(split => {
-      const user = split.user.toString();
-      balances[user] -= split.amount;
-    });
-  });
+const calculateSettlements = (expenses, members, settlements = []) => {
+  const ledger = buildGroupBalanceLedger(expenses, members, settlements);
 
   // Separate creditors and debtors
   let creditors = [];
   let debtors = [];
 
-  Object.keys(balances).forEach(userId => {
-    const amount = balances[userId];
-    if (amount > 0.01) {
+  Object.keys(ledger).forEach(userId => {
+    const amount = ledger[userId].netBalanceCents;
+    if (amount > 1) {
       creditors.push({ userId, amount });
-    } else if (amount < -0.01) {
+    } else if (amount < -1) {
       debtors.push({ userId, amount: Math.abs(amount) });
     }
   });
@@ -54,14 +38,14 @@ const calculateSettlements = (expenses, members) => {
     transactions.push({
       from: debt.userId,
       to: credit.userId,
-      amount: Number(settlementAmount.toFixed(2))
+      amount: fromCents(settlementAmount)
     });
 
     creditors[i].amount -= settlementAmount;
     debtors[j].amount -= settlementAmount;
 
-    if (creditors[i].amount < 0.01) i++;
-    if (debtors[j].amount < 0.01) j++;
+    if (creditors[i].amount < 1) i++;
+    if (debtors[j].amount < 1) j++;
   }
 
   return transactions;

@@ -21,6 +21,11 @@ const expenseSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  participants: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }],
   splitType: {
     type: String,
     enum: ['equal', 'unequal'],
