@@ -21,6 +21,11 @@ const expenseSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  addedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
   participants: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -45,6 +50,10 @@ const expenseSchema = new mongoose.Schema({
   category: {
     type: String,
     default: 'General'
+  },
+  receipt: {
+    type: String,
+    default: ''
   },
   date: {
     type: Date,

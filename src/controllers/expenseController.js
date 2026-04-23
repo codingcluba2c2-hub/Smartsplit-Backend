@@ -2,6 +2,7 @@ const Expense = require('../models/Expense');
 const Group = require('../models/Group');
 const { calculateSettlements } = require('../services/settlementService');
 const { getExpenseShares, fromCents, toCents } = require('../services/balanceService');
+const { uploadToCloudinary } = require('../services/cloudinaryService');
 
 const getMemberId = (member) => {
   if (!member.user) return null;
@@ -21,7 +22,8 @@ const isGroupMember = (group, userId) => {
 const normalizeUniqueIds = (values = []) => [...new Set(values.map((value) => value?.toString()).filter(Boolean))];
 
 exports.addExpense = async (req, res) => {
-  const { groupId, description, amount, splitType = 'equal', splitDetails = [], participants = [], category } = req.body;
+  console.log('Received addExpense request:', req.body);
+  const { groupId, description, amount, splitType = 'equal', splitDetails = [], participants = [], category, paidBy, receipt } = req.body;
 
   try {
     const group = await Group.findById(groupId);
@@ -61,20 +63,40 @@ exports.addExpense = async (req, res) => {
       }
     }
 
+    let finalPaidBy = req.user._id;
+    if (paidBy) {
+      if (!isGroupMember(group, paidBy)) {
+        return res.status(400).json({ message: 'The user who paid must be a group member' });
+      }
+      finalPaidBy = paidBy;
+    }
+
+    let receiptURL = '';
+    if (receipt) {
+      try {
+        receiptURL = await uploadToCloudinary(receipt, 'smartsplit_receipts');
+      } catch (uploadError) {
+        return res.status(400).json({ message: 'Failed to upload receipt image' });
+      }
+    }
+
     const expense = await Expense.create({
       groupId,
       description,
       amount: parsedAmount,
-      paidBy: req.user._id,
+      paidBy: finalPaidBy,
+      addedBy: req.user._id,
       participants: participantIds,
       splitType,
       splitDetails,
-      category
+      category,
+      receipt: receiptURL
     });
 
     try {
       await Expense.populate(expense, [
         { path: 'paidBy', select: 'name avatar' },
+        { path: 'addedBy', select: 'name avatar' },
         { path: 'participants', select: 'name avatar' },
         { path: 'splitDetails.user', select: 'name avatar' }
       ]);
@@ -100,6 +122,7 @@ exports.getGroupExpenses = async (req, res) => {
     const expenses = await Expense.find({ groupId: req.params.groupId })
       .populate([
         { path: 'paidBy', select: 'name avatar' },
+        { path: 'addedBy', select: 'name avatar' },
         { path: 'participants', select: 'name avatar' },
         { path: 'splitDetails.user', select: 'name avatar' }
       ])

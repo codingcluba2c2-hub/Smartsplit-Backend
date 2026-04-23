@@ -6,10 +6,10 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-const uploadToCloudinary = async (fileStr) => {
+const uploadToCloudinary = async (fileStr, folderName = 'smartsplit_avatars') => {
   try {
     const uploadResponse = await cloudinary.uploader.upload(fileStr, {
-      folder: 'smartsplit_avatars',
+      folder: folderName,
       resource_type: 'auto'
     });
     return uploadResponse.secure_url;
