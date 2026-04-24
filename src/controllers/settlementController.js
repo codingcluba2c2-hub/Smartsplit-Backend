@@ -2,8 +2,9 @@ const Group = require('../models/Group');
 const Settlement = require('../models/Settlement');
 
 exports.createSettlement = async (req, res) => {
-  const { groupId, receiverId, amount, paymentType, screenshot, note } = req.body;
-  const payerId = req.user._id.toString();
+  const { groupId, payerId: customPayerId, receiverId, amount, paymentType, screenshot, note } = req.body;
+  const addedBy = req.user._id.toString();
+  const payerId = customPayerId || addedBy;
 
   try {
     const group = await Group.findById(groupId);
@@ -11,9 +12,12 @@ exports.createSettlement = async (req, res) => {
 
     const isPayerMember = group.members.some((member) => member.user.toString() === payerId);
     const isReceiverMember = group.members.some((member) => member.user.toString() === receiverId);
-    if (!isPayerMember || !isReceiverMember) {
-      return res.status(403).json({ message: 'Both payer and receiver must be group members' });
+    const isAdderMember = group.members.some((member) => member.user.toString() === addedBy);
+
+    if (!isPayerMember || !isReceiverMember || !isAdderMember) {
+      return res.status(403).json({ message: 'Payer, receiver, and requester must be group members' });
     }
+
     if (payerId === receiverId) {
       return res.status(400).json({ message: 'Cannot settle with yourself' });
     }
@@ -26,6 +30,7 @@ exports.createSettlement = async (req, res) => {
       groupId,
       payerId,
       receiverId,
+      addedBy,
       amount: parsedAmount,
       paymentType,
       screenshot: screenshot || '',
@@ -49,7 +54,8 @@ exports.getGroupSettlements = async (req, res) => {
     const settlements = await Settlement.find({ groupId: req.params.groupId })
       .populate([
         { path: 'payerId', select: 'name avatar email' },
-        { path: 'receiverId', select: 'name avatar email' }
+        { path: 'receiverId', select: 'name avatar email' },
+        { path: 'addedBy', select: 'name avatar email' }
       ])
       .sort({ createdAt: -1 });
 

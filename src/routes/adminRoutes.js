@@ -26,6 +26,7 @@ router.get('/expenses', adminController.getAllExpenses);
 // Settlement Monitoring
 router.get('/settlements', adminController.getAllSettlements);
 router.patch('/settlements/:id/flag', adminController.flagSettlement);
+router.delete('/settlements/:id', adminController.deleteSettlement);
 
 // Report/Dispute System
 router.get('/reports', adminController.getAllReports);

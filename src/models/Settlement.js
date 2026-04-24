@@ -42,6 +42,11 @@ const settlementSchema = new mongoose.Schema({
   settledAt: {
     type: Date
   },
+  addedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
   isFlagged: {
     type: Boolean,
     default: false

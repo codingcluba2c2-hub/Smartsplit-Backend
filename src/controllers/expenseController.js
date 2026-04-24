@@ -23,7 +23,7 @@ const normalizeUniqueIds = (values = []) => [...new Set(values.map((value) => va
 
 exports.addExpense = async (req, res) => {
   console.log('Received addExpense request:', req.body);
-  const { groupId, description, amount, splitType = 'equal', splitDetails = [], participants = [], category, paidBy, receipt } = req.body;
+  const { groupId, description, amount, splitType = 'equal', splitDetails = [], participants = [], category, paidBy, receipt, paymentMethod } = req.body;
 
   try {
     const group = await Group.findById(groupId);
@@ -90,7 +90,8 @@ exports.addExpense = async (req, res) => {
       splitType,
       splitDetails,
       category,
-      receipt: receiptURL
+      receipt: receiptURL,
+      paymentMethod: paymentMethod || 'UPI'
     });
 
     try {

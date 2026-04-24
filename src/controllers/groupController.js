@@ -45,6 +45,7 @@ exports.createGroup = async (req, res) => {
 exports.getGroups = async (req, res) => {
   try {
     const groups = await Group.find({ 'members.user': req.user._id })
+      .sort({ createdAt: -1 })
       .populate([
         { path: 'members.user', select: 'name email avatar' },
         { path: 'createdBy', select: 'name' }
@@ -87,6 +88,11 @@ exports.getGroupById = async (req, res) => {
           { path: 'splitDetails.user', select: 'name avatar' }
         ]),
       Settlement.find({ groupId: group._id })
+        .populate([
+          { path: 'payerId', select: 'name avatar email' },
+          { path: 'receiverId', select: 'name avatar email' },
+          { path: 'addedBy', select: 'name avatar email' }
+        ])
     ]);
 
     const summary = calculateGroupSummary(expenses, settlements, group);
@@ -159,6 +165,45 @@ exports.removeMember = async (req, res) => {
     await group.save();
 
     res.json({ message: 'Member removed successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getFriends = async (req, res) => {
+  const { search } = req.query;
+  try {
+    if (search) {
+      const users = await User.find({
+        $and: [
+          { _id: { $ne: req.user._id } },
+          {
+            $or: [
+              { name: { $regex: search, $options: 'i' } },
+              { email: { $regex: search, $options: 'i' } }
+            ]
+          }
+        ]
+      }).select('name email avatar').limit(10);
+      return res.json(users);
+    }
+
+    const groups = await Group.find({ 'members.user': req.user._id })
+      .populate('members.user', 'name email avatar');
+    
+    const friendsMap = new Map();
+    
+    groups.forEach(group => {
+      group.members.forEach(member => {
+        const friend = member.user;
+        if (friend && friend._id.toString() !== req.user._id.toString()) {
+          friendsMap.set(friend._id.toString(), friend);
+        }
+      });
+    });
+    
+    const friends = Array.from(friendsMap.values());
+    res.json(friends);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

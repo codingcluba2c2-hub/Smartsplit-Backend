@@ -220,6 +220,7 @@ exports.getAllSettlements = async (req, res) => {
       .populate('groupId', 'name')
       .populate('payerId', 'name email avatar')
       .populate('receiverId', 'name email avatar')
+      .populate('addedBy', 'name email avatar')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -253,6 +254,21 @@ exports.flagSettlement = async (req, res) => {
     }
 
     res.json({ message: `Settlement ${flagged ? 'flagged' : 'unflagged'} successfully`, settlement });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.deleteSettlement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const settlement = await Settlement.findByIdAndDelete(id);
+
+    if (!settlement) {
+      return res.status(404).json({ message: 'Settlement not found' });
+    }
+
+    res.json({ message: 'Settlement deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

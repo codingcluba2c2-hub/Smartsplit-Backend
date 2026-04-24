@@ -6,12 +6,14 @@ const {
   getGroupById,
   getGroupMembers,
   addMember,
-  removeMember
+  removeMember,
+  getFriends
 } = require('../controllers/groupController');
 const { protect } = require('../middlewares/authMiddleware');
 
 router.use(protect);
 
+router.get('/friends', getFriends);
 router.post('/', createGroup);
 router.get('/', getGroups);
 router.get('/:id', getGroupById);
