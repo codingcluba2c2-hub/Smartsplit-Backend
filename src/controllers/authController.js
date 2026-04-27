@@ -91,6 +91,7 @@ exports.verifyEmail = async (req, res) => {
       name: user.name,
       email: user.email,
       avatar,
+      upiId: user.upiId || '',
       role: user.role,
       token: generateToken(user._id)
     });
@@ -138,6 +139,7 @@ exports.loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         avatar,
+        upiId: user.upiId || '',
         role: user.role,
         token: generateToken(user._id)
       });
@@ -198,6 +200,7 @@ exports.googleLogin = async (req, res) => {
       email: user.email,
       avatar,
       mobile: user.mobile || '',
+      upiId: user.upiId || '',
       role: user.role,
       token: generateToken(user._id),
     });
@@ -212,10 +215,11 @@ exports.updateProfile = async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const { name, mobile, avatar } = req.body;
+    const { name, mobile, upiId, avatar } = req.body;
     
     if (name) user.name = name;
     if (mobile !== undefined) user.mobile = mobile;
+    if (upiId !== undefined) user.upiId = upiId;
     
     if (avatar) {
       if (avatar.startsWith('data:image')) {
@@ -234,6 +238,7 @@ exports.updateProfile = async (req, res) => {
       email: updatedUser.email,
       avatar: resolveAvatar(updatedUser),
       mobile: updatedUser.mobile,
+      upiId: updatedUser.upiId,
       token: generateToken(updatedUser._id)
     });
   } catch (error) {

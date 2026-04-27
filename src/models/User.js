@@ -30,6 +30,11 @@ const userSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  upiId: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   avatar: {
     type: String,
     default: function() {

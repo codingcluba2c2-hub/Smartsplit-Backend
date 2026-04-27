@@ -35,7 +35,7 @@ exports.createGroup = async (req, res) => {
       createdBy: req.user._id
     });
 
-    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar' });
+    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar upiId' });
     res.status(201).json(populatedGroup);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -47,7 +47,7 @@ exports.getGroups = async (req, res) => {
     const groups = await Group.find({ 'members.user': req.user._id })
       .sort({ createdAt: -1 })
       .populate([
-        { path: 'members.user', select: 'name email avatar' },
+        { path: 'members.user', select: 'name email avatar upiId' },
         { path: 'createdBy', select: 'name' }
       ]);
 
@@ -70,7 +70,7 @@ exports.getGroupById = async (req, res) => {
   try {
     const group = await Group.findById(req.params.id)
       .populate([
-        { path: 'members.user', select: 'name email avatar' },
+        { path: 'members.user', select: 'name email avatar upiId' },
         { path: 'createdBy', select: 'name' }
       ]);
 
@@ -82,16 +82,16 @@ exports.getGroupById = async (req, res) => {
     const [expenses, settlements] = await Promise.all([
       Expense.find({ groupId: group._id })
         .populate([
-          { path: 'paidBy', select: 'name avatar' },
-          { path: 'addedBy', select: 'name avatar' },
-          { path: 'participants', select: 'name avatar' },
-          { path: 'splitDetails.user', select: 'name avatar' }
+          { path: 'paidBy', select: 'name avatar upiId' },
+          { path: 'addedBy', select: 'name avatar upiId' },
+          { path: 'participants', select: 'name avatar upiId' },
+          { path: 'splitDetails.user', select: 'name avatar upiId' }
         ]),
       Settlement.find({ groupId: group._id })
         .populate([
-          { path: 'payerId', select: 'name avatar email' },
-          { path: 'receiverId', select: 'name avatar email' },
-          { path: 'addedBy', select: 'name avatar email' }
+          { path: 'payerId', select: 'name avatar email upiId' },
+          { path: 'receiverId', select: 'name avatar email upiId' },
+          { path: 'addedBy', select: 'name avatar email upiId' }
         ])
     ]);
 
@@ -111,7 +111,7 @@ exports.getGroupById = async (req, res) => {
 
 exports.getGroupMembers = async (req, res) => {
   try {
-    const group = await Group.findById(req.params.id).populate('members.user', 'name email avatar');
+    const group = await Group.findById(req.params.id).populate('members.user', 'name email avatar upiId');
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
     const isMember = ensureGroupMember(group, req.user._id.toString());
@@ -143,7 +143,7 @@ exports.addMember = async (req, res) => {
     group.members.push({ user: userToAdd._id, role: 'member', joinedAt: new Date() });
     await group.save();
 
-    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar' });
+    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar upiId' });
     res.json(populatedGroup.members);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -184,12 +184,12 @@ exports.getFriends = async (req, res) => {
             ]
           }
         ]
-      }).select('name email avatar').limit(10);
+      }).select('name email avatar upiId').limit(10);
       return res.json(users);
     }
 
     const groups = await Group.find({ 'members.user': req.user._id })
-      .populate('members.user', 'name email avatar');
+      .populate('members.user', 'name email avatar upiId');
     
     const friendsMap = new Map();
     
