@@ -1,9 +1,5 @@
+// index.js (Vercel version)
 require('dotenv').config();
-const dns = require('node:dns');
-
-// Fix for querySrv ECONNREFUSED when using mongodb+srv
-// This forces Node to use reliable public DNS servers for resolution
-dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 const express = require('express');
 const mongoose = require('mongoose');
@@ -20,7 +16,6 @@ const adminRoutes = require('./routes/adminRoutes');
 const app = express();
 
 // Middleware
-// Increased limit to fix the "Network Error" when uploading screenshots
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors());
@@ -37,18 +32,37 @@ app.use('/api/admin', adminRoutes);
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'OK' }));
 
-// Database connection
-const PORT = process.env.PORT || 5000;
+// Database connection (Vercel optimized)
 const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
-  console.error('Missing MONGODB_URI environment variable. Set it in your local .env or deployment environment.');
-  process.exit(1);
+  console.error('Missing MONGODB_URI');
 }
 
-mongoose.connect(MONGODB_URI)
-  .then(() => {
-    console.log('Connected to MongoDB');
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-  })
-  .catch((err) => console.error('MongoDB connection error:', err));
+// Cache connection for serverless
+let cached = global.mongoose;
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
+async function connectDB() {
+  if (cached.conn) return cached.conn;
+  if (!cached.promise) {
+    cached.promise = mongoose.connect(MONGODB_URI).then(mongoose => mongoose);
+  }
+  cached.conn = await cached.promise;
+  return cached.conn;
+}
+
+// Connect DB before handling requests
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    res.status(500).json({ error: 'Database connection failed' });
+  }
+});
+
+// ❌ NO app.listen() here
+module.exports = app;  // ✅ This is for Vercel
