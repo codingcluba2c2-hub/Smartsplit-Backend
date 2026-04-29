@@ -51,20 +51,36 @@ if (!cached) {
   cached = global.mongoose = { conn: null, promise: null };
 }
 
+// Monitor connection events
+mongoose.connection.on('connected', () => console.log('Mongoose connected to DB'));
+mongoose.connection.on('error', (err) => console.error('Mongoose connection error:', err.message));
+mongoose.connection.on('disconnected', () => console.log('Mongoose disconnected'));
+
 async function connectDB() {
   if (cached.conn) return cached.conn;
 
   if (!cached.promise) {
     const opts = {
-      bufferCommands: false, // Fail fast if not connected
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 10000, // Timeout for the driver to find a server
     };
 
     console.log('Attempting to connect to MongoDB...');
+    if (!MONGODB_URI) {
+      const err = new Error('MONGODB_URI environment variable is missing');
+      console.error(err.message);
+      throw err;
+    }
+
+    // Mask URI for logs (e.g. mongodb+srv://user:***@host...)
+    const maskedUri = MONGODB_URI.replace(/\/\/(.*):(.*)@/, '//***:***@');
+    console.log(`Connecting to: ${maskedUri}`);
+
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-      console.log('Connected to MongoDB');
+      console.log('Successfully connected to MongoDB');
       return mongoose;
     }).catch(err => {
-      console.error('MongoDB connection error in promise:', err.message);
+      console.error('MongoDB connection promise rejected:', err.message);
       cached.promise = null; // Reset so we can try again
       throw err;
     });
