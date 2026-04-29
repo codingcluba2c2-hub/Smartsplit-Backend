@@ -38,22 +38,11 @@ app.use('/api/admin', adminRoutes);
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'OK' }));
 
-// Validate required environment variables
-const requiredEnv = ['MONGODB_URI', 'JWT_SECRET', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'];
-requiredEnv.forEach(env => {
-  if (!process.env[env]) {
-    console.error(`CRITICAL: Environment variable ${env} is missing! This will cause 401/500 errors on Vercel.`);
-  }
-});
-
 // Database connection (Vercel optimized)
-let MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
   console.error('Missing MONGODB_URI');
-} else if (!MONGODB_URI.includes('.net/') || MONGODB_URI.includes('.net/?')) {
-  // Ensure a database name is specified to avoid defaulting to 'test'
-  MONGODB_URI = MONGODB_URI.replace('.net/', '.net/SmartSplit');
 }
 
 // Cache connection for serverless
@@ -103,7 +92,7 @@ async function connectDB() {
     cached.promise = null;
     throw e;
   }
-  
+
   return cached.conn;
 }
 
