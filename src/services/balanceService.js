@@ -97,11 +97,6 @@ const buildGroupBalanceLedger = (expenses, members, settlements = []) => {
     });
   });
 
-  Object.values(ledger).forEach((entry) => {
-    entry.balanceCents = entry.totalPaidCents - entry.totalShareCents;
-    entry.netBalanceCents = entry.balanceCents;
-  });
-
   settlements
     .filter((settlement) => settlement.status === 'completed')
     .forEach((settlement) => {
@@ -121,7 +116,6 @@ const buildGroupBalanceLedger = (expenses, members, settlements = []) => {
           };
         }
         ledger[payerId].settlementPaidCents += amountCents;
-        ledger[payerId].netBalanceCents -= amountCents;
       }
 
       if (receiverId) {
@@ -136,9 +130,14 @@ const buildGroupBalanceLedger = (expenses, members, settlements = []) => {
           };
         }
         ledger[receiverId].settlementReceivedCents += amountCents;
-        ledger[receiverId].netBalanceCents += amountCents;
       }
     });
+
+  Object.values(ledger).forEach((entry) => {
+    entry.balanceCents = entry.totalPaidCents - entry.totalShareCents;
+    // Net Balance = (What you spent + What you paid in settlements) - (Your share of expenses + What you received in settlements)
+    entry.netBalanceCents = (entry.totalPaidCents + entry.settlementPaidCents) - (entry.totalShareCents + entry.settlementReceivedCents);
+  });
 
   return ledger;
 };
