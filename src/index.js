@@ -16,8 +16,10 @@ const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
-// Set DNS servers (helps with MongoDB Atlas connection issues on some networks)
-dns.setServers(['8.8.8.8', '1.1.1.1']);
+// Set DNS servers for local development only
+if (process.env.NODE_ENV !== 'production') {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+}
 
 // Middleware
 app.use(express.json({ limit: '50mb' }));
@@ -51,13 +53,30 @@ if (!cached) {
 
 async function connectDB() {
   if (cached.conn) return cached.conn;
+
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI).then(mongoose => {
+    const opts = {
+      bufferCommands: false, // Fail fast if not connected
+    };
+
+    console.log('Attempting to connect to MongoDB...');
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
       console.log('Connected to MongoDB');
       return mongoose;
+    }).catch(err => {
+      console.error('MongoDB connection error in promise:', err.message);
+      cached.promise = null; // Reset so we can try again
+      throw err;
     });
   }
-  cached.conn = await cached.promise;
+
+  try {
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null;
+    throw e;
+  }
+  
   return cached.conn;
 }
 
