@@ -21,6 +21,9 @@ if (process.env.NODE_ENV !== 'production') {
   dns.setServers(['8.8.8.8', '1.1.1.1']);
 }
 
+// Disable mongoose buffering globally for serverless environments
+mongoose.set('bufferCommands', false);
+
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -32,17 +35,6 @@ app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   next();
 });
-
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/groups', groupRoutes);
-app.use('/api/expenses', expenseRoutes);
-app.use('/api/settlements', settlementRoutes);
-app.use('/api/history', historyRoutes);
-app.use('/api/admin', adminRoutes);
-
-// Health check
-app.get('/health', (req, res) => res.json({ status: 'OK' }));
 
 // Database connection (Vercel optimized)
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -79,7 +71,7 @@ async function connectDB() {
       throw err;
     }
 
-    // Mask URI for logs (e.g. mongodb+srv://user:***@host...)
+    // Mask URI for logs
     const maskedUri = MONGODB_URI.replace(/\/\/(.*):(.*)@/, '//***:***@');
     console.log(`Connecting to: ${maskedUri}`);
 
@@ -88,7 +80,7 @@ async function connectDB() {
       return mongoose;
     }).catch(err => {
       console.error('MongoDB connection promise rejected:', err.message);
-      cached.promise = null; // Reset so we can try again
+      cached.promise = null;
       throw err;
     });
   }
@@ -103,16 +95,24 @@ async function connectDB() {
   return cached.conn;
 }
 
-// Connect DB before handling requests
+// Connect DB before handling requests - MUST BE BEFORE ROUTES
 app.use(async (req, res, next) => {
   try {
     await connectDB();
     next();
   } catch (err) {
-    console.error('Database connection error:', err.message);
-    res.status(500).json({ error: 'Database connection failed' });
+    console.error('Database connection error in middleware:', err.message);
+    res.status(500).json({ error: 'Database connection failed. Please try again.' });
   }
 });
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/groups', groupRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/settlements', settlementRoutes);
+app.use('/api/history', historyRoutes);
+app.use('/api/admin', adminRoutes);
 
 // ❌ NO app.listen() here for Vercel
 // But we need it for local development
