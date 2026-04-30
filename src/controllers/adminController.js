@@ -155,13 +155,19 @@ exports.deleteGroup = async (req, res) => {
 exports.getGroupById = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log('Admin fetching group details for ID:', id);
+
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: 'Invalid group ID format' });
+    }
 
     const group = await Group.findById(id)
       .populate('createdBy', 'name email avatar')
       .populate('members.user', 'name email avatar');
 
     if (!group) {
-      return res.status(404).json({ message: 'Group not found' });
+      console.log('Group not found for ID:', id);
+      return res.status(404).json({ message: 'Group not found in database' });
     }
 
     res.json({ group });
