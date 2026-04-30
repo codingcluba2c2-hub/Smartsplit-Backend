@@ -27,6 +27,12 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors());
 app.use(cookieParser());
 
+// Security headers for Google Auth popups
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  next();
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/groups', groupRoutes);
@@ -62,7 +68,8 @@ async function connectDB() {
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 10000, // Timeout for the driver to find a server
+      serverSelectionTimeoutMS: 15000, 
+      connectTimeoutMS: 15000,
     };
 
     console.log('Attempting to connect to MongoDB...');
