@@ -7,7 +7,9 @@ const {
   getGroupMembers,
   addMember,
   removeMember,
-  getFriends
+  getFriends,
+  updateGroup,
+  deleteGroup
 } = require('../controllers/groupController');
 const { protect } = require('../middlewares/authMiddleware');
 
@@ -17,6 +19,8 @@ router.get('/friends', getFriends);
 router.post('/', createGroup);
 router.get('/', getGroups);
 router.get('/:id', getGroupById);
+router.put('/:id', updateGroup);
+router.delete('/:id', deleteGroup);
 router.get('/:id/members', getGroupMembers);
 router.post('/:id/add-member', addMember);
 router.delete('/:id/members', removeMember);

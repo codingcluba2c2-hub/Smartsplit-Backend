@@ -32,4 +32,7 @@ router.delete('/settlements/:id', adminController.deleteSettlement);
 router.get('/reports', adminController.getAllReports);
 router.patch('/reports/:id/resolve', adminController.resolveReport);
 
+// Activity Logs
+router.get('/login-logs', adminController.getLoginLogs);
+
 module.exports = router;

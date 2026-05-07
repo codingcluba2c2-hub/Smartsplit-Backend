@@ -3,33 +3,38 @@ const Group = require('../models/Group');
 const Expense = require('../models/Expense');
 const Settlement = require('../models/Settlement');
 const Report = require('../models/Report');
+const LoginLog = require('../models/LoginLog');
 
 // Dashboard stats
 exports.getDashboardStats = async (req, res) => {
   try {
-    console.log('Admin dashboard request from user:', req.user.id);
-
     const totalUsers = await User.countDocuments();
     const totalGroups = await Group.countDocuments();
     const totalExpenses = await Expense.countDocuments();
     const totalSettlements = await Settlement.countDocuments();
 
     const currentDate = new Date();
-    const last12Months = [];
+    const stats = [];
 
-    for (let i = 11; i >= 0; i--) {
+    // Get stats for last 6 months specifically as requested
+    for (let i = 5; i >= 0; i--) {
       const start = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
       const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
 
-      const users = await User.countDocuments({ createdAt: { $gte: start, $lt: end } });
-      const groups = await Group.countDocuments({ createdAt: { $gte: start, $lt: end } });
-      const expenses = await Expense.countDocuments({ createdAt: { $gte: start, $lt: end } });
+      const [newUsers, newGroups, monthExpenses] = await Promise.all([
+        User.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+        Group.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+        Expense.find({ createdAt: { $gte: start, $lt: end } }).select('amount')
+      ]);
 
-      last12Months.push({
+      const totalAmount = monthExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+      stats.push({
         month: start.toLocaleString('default', { month: 'short' }),
-        users,
-        groups,
-        expenses
+        newUsers,
+        newGroups,
+        expenseCount: monthExpenses.length,
+        totalAmount
       });
     }
 
@@ -38,10 +43,9 @@ exports.getDashboardStats = async (req, res) => {
       totalGroups,
       totalExpenses,
       totalSettlements,
-      activityData: last12Months
+      monthlyStats: stats
     });
   } catch (error) {
-    console.error('Error in getDashboardStats:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
@@ -327,6 +331,35 @@ exports.resolveReport = async (req, res) => {
     }
 
     res.json({ message: 'Report resolved successfully', report });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Login Activity Logs
+exports.getLoginLogs = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, email = '' } = req.query;
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+    if (email) {
+      filter.email = { $regex: email, $options: 'i' };
+    }
+
+    const logs = await LoginLog.find(filter)
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await LoginLog.countDocuments(filter);
+
+    res.json({
+      logs,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit)
+    });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

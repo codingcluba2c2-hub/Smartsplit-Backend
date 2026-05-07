@@ -6,6 +6,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const http = require('http');
+const socketService = require('./services/socketService');
 
 const authRoutes = require('./routes/authRoutes');
 const groupRoutes = require('./routes/groupRoutes');
@@ -13,8 +15,16 @@ const expenseRoutes = require('./routes/expenseRoutes');
 const settlementRoutes = require('./routes/settlementRoutes');
 const historyRoutes = require('./routes/historyRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const chatRoutes = require('./routes/chatRoutes');
 
 const app = express();
+const server = http.createServer(app);
+
+// Enable trust proxy for real IP detection
+app.set('trust proxy', true);
+
+// Initialize Socket.io
+socketService.init(server);
 
 // Set DNS servers for local development only
 if (process.env.NODE_ENV !== 'production') {
@@ -113,12 +123,13 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/settlements', settlementRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/chat', chatRoutes);
 
 // ❌ NO app.listen() here for Vercel
 // But we need it for local development
 const PORT = process.env.PORT || 5000;
 if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, async () => {
+  server.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
     try {
       await connectDB();
@@ -128,4 +139,4 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-module.exports = app;  // ✅ This is for Vercel
+module.exports = app;

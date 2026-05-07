@@ -208,3 +208,48 @@ exports.getFriends = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.updateGroup = async (req, res) => {
+  const { name, description, category } = req.body;
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    const requester = group.members.find((member) => member.user.toString() === req.user._id.toString());
+    if (!requester || requester.role !== 'admin') {
+      return res.status(403).json({ message: 'Only admins can update group details' });
+    }
+
+    group.name = name || group.name;
+    group.description = description || group.description;
+    group.category = category || group.category;
+
+    await group.save();
+    res.json(group);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.deleteGroup = async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    const requester = group.members.find((member) => member.user.toString() === req.user._id.toString());
+    if (!requester || requester.role !== 'admin') {
+      return res.status(403).json({ message: 'Only admins can delete the group' });
+    }
+
+    // Delete associated expenses and settlements
+    await Promise.all([
+      Expense.deleteMany({ groupId: group._id }),
+      Settlement.deleteMany({ groupId: group._id }),
+      group.deleteOne()
+    ]);
+
+    res.json({ message: 'Group deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

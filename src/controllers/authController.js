@@ -1,10 +1,35 @@
 const User = require('../models/User');
 const OTP = require('../models/OTP');
+const LoginLog = require('../models/LoginLog');
+const useragent = require('useragent');
 const { sendOTP } = require('../services/emailService');
 const { uploadToCloudinary } = require('../services/cloudinaryService');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+const logLogin = async (req, user) => {
+  try {
+    const agent = useragent.parse(req.headers['user-agent']);
+    // req.ip will contain the real client IP when trust proxy is enabled
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    
+    await LoginLog.create({
+      userId: user._id,
+      username: user.name,
+      email: user.email,
+      ipAddress: ip,
+      userAgent: req.headers['user-agent'],
+      deviceInfo: {
+        browser: agent.toAgent(),
+        os: agent.os.toString(),
+        device: agent.device.toString()
+      }
+    });
+  } catch (error) {
+    console.error('Failed to log login:', error);
+  }
+};
 
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -134,6 +159,10 @@ exports.loginUser = async (req, res) => {
       }
 
       const avatar = resolveAvatar(user);
+      
+      // Log login activity
+      await logLogin(req, user);
+
       res.json({
         _id: user._id,
         name: user.name,
@@ -193,6 +222,9 @@ exports.googleLogin = async (req, res) => {
     }
 
     const avatar = resolveAvatar(user);
+
+    // Log login activity
+    await logLogin(req, user);
 
     res.json({
       _id: user._id,
