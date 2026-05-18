@@ -35,7 +35,7 @@ exports.createGroup = async (req, res) => {
       createdBy: req.user._id
     });
 
-    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar upiId' });
+    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar upiId mobile' });
     res.status(201).json(populatedGroup);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -47,7 +47,7 @@ exports.getGroups = async (req, res) => {
     const groups = await Group.find({ 'members.user': req.user._id })
       .sort({ createdAt: -1 })
       .populate([
-        { path: 'members.user', select: 'name email avatar upiId' },
+        { path: 'members.user', select: 'name email avatar upiId mobile' },
         { path: 'createdBy', select: 'name' }
       ]);
 
@@ -70,7 +70,7 @@ exports.getGroupById = async (req, res) => {
   try {
     const group = await Group.findById(req.params.id)
       .populate([
-        { path: 'members.user', select: 'name email avatar upiId' },
+        { path: 'members.user', select: 'name email avatar upiId mobile' },
         { path: 'createdBy', select: 'name' }
       ]);
 
@@ -111,7 +111,7 @@ exports.getGroupById = async (req, res) => {
 
 exports.getGroupMembers = async (req, res) => {
   try {
-    const group = await Group.findById(req.params.id).populate('members.user', 'name email avatar upiId');
+    const group = await Group.findById(req.params.id).populate('members.user', 'name email avatar upiId mobile');
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
     const isMember = ensureGroupMember(group, req.user._id.toString());
@@ -143,7 +143,7 @@ exports.addMember = async (req, res) => {
     group.members.push({ user: userToAdd._id, role: 'member', joinedAt: new Date() });
     await group.save();
 
-    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar upiId' });
+    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar upiId mobile' });
     res.json(populatedGroup.members);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -184,25 +184,38 @@ exports.getFriends = async (req, res) => {
             ]
           }
         ]
-      }).select('name email avatar upiId').limit(10);
+      }).select('name email avatar upiId mobile').limit(10);
       return res.json(users);
     }
 
-    const groups = await Group.find({ 'members.user': req.user._id })
-      .populate('members.user', 'name email avatar upiId');
+    const fs = require('fs');
+    const logFile = 'c:\\Users\\Admin\\Desktop\\SmartSplit\\backend\\friends_debug.log';
+    fs.appendFileSync(logFile, `\n\n--- GET FRIENDS REQUEST AT ${new Date().toISOString()} ---\n`);
+    fs.appendFileSync(logFile, `LOGGED-IN USER: ${req.user._id} (${req.user.email})\n`);
     
+    const groups = await Group.find({ 'members.user': req.user._id })
+      .populate('members.user', 'name email avatar upiId mobile');
+    
+    fs.appendFileSync(logFile, `Fetched groups count: ${groups.length}\n`);
     const friendsMap = new Map();
     
     groups.forEach(group => {
       group.members.forEach(member => {
         const friend = member.user;
-        if (friend && friend._id.toString() !== req.user._id.toString()) {
-          friendsMap.set(friend._id.toString(), friend);
+        if (friend) {
+          fs.appendFileSync(logFile, `Checking group member: ${friend.name} (${friend.email}), ID: ${friend._id.toString()}, Mobile: ${friend.mobile}\n`);
+          if (friend._id.toString() !== req.user._id.toString()) {
+            fs.appendFileSync(logFile, `Adding friend: ${friend.name} (${friend.email}) to map\n`);
+            friendsMap.set(friend._id.toString(), friend);
+          } else {
+            fs.appendFileSync(logFile, `Filtering out self: ${friend.name}\n`);
+          }
         }
       });
     });
     
     const friends = Array.from(friendsMap.values());
+    fs.appendFileSync(logFile, `Friends returned: ${JSON.stringify(friends.map(f => ({ name: f.name, email: f.email, mobile: f.mobile })))} \n`);
     res.json(friends);
   } catch (error) {
     res.status(500).json({ message: error.message });
