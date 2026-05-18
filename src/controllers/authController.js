@@ -116,6 +116,7 @@ exports.verifyEmail = async (req, res) => {
       name: user.name,
       email: user.email,
       avatar,
+      mobile: user.mobile || '',
       upiId: user.upiId || '',
       role: user.role,
       token: generateToken(user._id)
@@ -168,6 +169,7 @@ exports.loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         avatar,
+        mobile: user.mobile || '',
         upiId: user.upiId || '',
         role: user.role,
         token: generateToken(user._id)
