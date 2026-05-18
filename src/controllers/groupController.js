@@ -189,33 +189,46 @@ exports.getFriends = async (req, res) => {
     }
 
     const fs = require('fs');
-    const logFile = 'c:\\Users\\Admin\\Desktop\\SmartSplit\\backend\\friends_debug.log';
-    fs.appendFileSync(logFile, `\n\n--- GET FRIENDS REQUEST AT ${new Date().toISOString()} ---\n`);
-    fs.appendFileSync(logFile, `LOGGED-IN USER: ${req.user._id} (${req.user.email})\n`);
+    const path = require('path');
+    
+    // Fallback to a dynamic path in the workspace or process.cwd(), with a fallback to /tmp on serverless
+    let logFile = path.join(process.cwd(), 'friends_debug.log');
+    
+    const safeLog = (message) => {
+      try {
+        fs.appendFileSync(logFile, message);
+      } catch (err) {
+        // If writing failed (e.g. read-only filesystem), fallback to standard console logging
+        console.log(`[friends_debug]: ${message.trim()}`);
+      }
+    };
+
+    safeLog(`\n\n--- GET FRIENDS REQUEST AT ${new Date().toISOString()} ---\n`);
+    safeLog(`LOGGED-IN USER: ${req.user._id} (${req.user.email})\n`);
     
     const groups = await Group.find({ 'members.user': req.user._id })
       .populate('members.user', 'name email avatar upiId mobile');
     
-    fs.appendFileSync(logFile, `Fetched groups count: ${groups.length}\n`);
+    safeLog(`Fetched groups count: ${groups.length}\n`);
     const friendsMap = new Map();
     
     groups.forEach(group => {
       group.members.forEach(member => {
         const friend = member.user;
         if (friend) {
-          fs.appendFileSync(logFile, `Checking group member: ${friend.name} (${friend.email}), ID: ${friend._id.toString()}, Mobile: ${friend.mobile}\n`);
+          safeLog(`Checking group member: ${friend.name} (${friend.email}), ID: ${friend._id.toString()}, Mobile: ${friend.mobile}\n`);
           if (friend._id.toString() !== req.user._id.toString()) {
-            fs.appendFileSync(logFile, `Adding friend: ${friend.name} (${friend.email}) to map\n`);
+            safeLog(`Adding friend: ${friend.name} (${friend.email}) to map\n`);
             friendsMap.set(friend._id.toString(), friend);
           } else {
-            fs.appendFileSync(logFile, `Filtering out self: ${friend.name}\n`);
+            safeLog(`Filtering out self: ${friend.name}\n`);
           }
         }
       });
     });
     
     const friends = Array.from(friendsMap.values());
-    fs.appendFileSync(logFile, `Friends returned: ${JSON.stringify(friends.map(f => ({ name: f.name, email: f.email, mobile: f.mobile })))} \n`);
+    safeLog(`Friends returned: ${JSON.stringify(friends.map(f => ({ name: f.name, email: f.email, mobile: f.mobile })))} \n`);
     res.json(friends);
   } catch (error) {
     res.status(500).json({ message: error.message });
