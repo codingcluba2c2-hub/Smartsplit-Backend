@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const OTP = require('../models/OTP');
+const Notification = require('../models/Notification');
 const LoginLog = require('../models/LoginLog');
 const useragent = require('useragent');
 const { sendOTP } = require('../services/emailService');
@@ -69,10 +70,12 @@ exports.registerUser = async (req, res) => {
     
     // Generate and send OTP
     const otpCode = generateOTP();
-    await OTP.create({ email, otp: otpCode });
+    const cleanEmail = email.trim().toLowerCase();
+    await OTP.deleteMany({ email: cleanEmail }); // Always delete old OTP records before creating new one
+    await OTP.create({ email: cleanEmail, otp: otpCode });
     
     try {
-      await sendOTP(email, otpCode);
+      await sendOTP(cleanEmail, otpCode);
       res.status(201).json({
         message: 'Registration successful. Please verify your email with the OTP sent.',
         email: user.email,
@@ -95,19 +98,37 @@ exports.verifyEmail = async (req, res) => {
   const { email, otp } = req.body;
 
   try {
-    const otpRecord = await OTP.findOne({ email, otp });
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    const cleanOtp = otp ? String(otp).trim() : '';
+
+    const otpRecord = await OTP.findOne({
+      email: cleanEmail,
+      otp: cleanOtp,
+      expiresAt: { $gt: new Date() }
+    });
+
     if (!otpRecord) {
       return res.status(400).json({ message: 'Invalid or expired OTP' });
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: cleanEmail });
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     user.isVerified = true;
     await user.save();
+
+    // Create system notification for new user registration
+    await Notification.create({
+      title: 'New User Registered',
+      message: `User ${user.name} (${user.email}) has registered and verified their email.`,
+      type: 'success',
+      targetId: user._id,
+      targetModel: 'User',
+      recipientRole: 'admin'
+    });
     
     // Delete OTP record after verification
-    await OTP.deleteMany({ email });
+    await OTP.deleteMany({ email: cleanEmail });
 
     const avatar = resolveAvatar(user);
 
@@ -116,9 +137,14 @@ exports.verifyEmail = async (req, res) => {
       name: user.name,
       email: user.email,
       avatar,
+      profilePicture: user.profilePicture || avatar,
       mobile: user.mobile || '',
+      mobileNumber: user.mobileNumber || user.mobile || '',
       upiId: user.upiId || '',
       role: user.role,
+      authProvider: user.authProvider || 'local',
+      isMobileVerified: user.isMobileVerified || false,
+      status: user.status || 'active',
       token: generateToken(user._id)
     });
   } catch (error) {
@@ -130,15 +156,16 @@ exports.resendOTP = async (req, res) => {
   const { email } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    const user = await User.findOne({ email: cleanEmail });
     if (!user) return res.status(404).json({ message: 'User not found' });
     if (user.isVerified) return res.status(400).json({ message: 'Account is already verified' });
 
     const otpCode = generateOTP();
-    await OTP.deleteMany({ email }); // Delete old OTPs
-    await OTP.create({ email, otp: otpCode });
+    await OTP.deleteMany({ email: cleanEmail }); // Delete old OTPs
+    await OTP.create({ email: cleanEmail, otp: otpCode });
 
-    await sendOTP(email, otpCode);
+    await sendOTP(cleanEmail, otpCode);
     res.json({ message: 'New OTP sent to your email' });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -169,9 +196,14 @@ exports.loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         avatar,
+        profilePicture: user.profilePicture || avatar,
         mobile: user.mobile || '',
+        mobileNumber: user.mobileNumber || user.mobile || '',
         upiId: user.upiId || '',
         role: user.role,
+        authProvider: user.authProvider || 'local',
+        isMobileVerified: user.isMobileVerified || false,
+        status: user.status || 'active',
         token: generateToken(user._id)
       });
     } else {
@@ -204,16 +236,35 @@ exports.googleLogin = async (req, res) => {
 
     if (user) {
       // Update googleId if not present
+      let isModified = false;
       if (!user.googleId) {
         user.googleId = googleId;
+        isModified = true;
+      }
+      if (user.authProvider !== 'google') {
+        user.authProvider = 'google';
+        isModified = true;
+      }
+      if (picture && (!user.avatar || user.avatar.includes('ui-avatars.com') || user.avatar.includes('name=User'))) {
+        user.avatar = picture;
+        user.profilePicture = picture;
+        isModified = true;
+      }
+      if (!user.isVerified) {
+        user.isVerified = true;
+        isModified = true;
+      }
+      if (isModified) {
         await user.save();
       }
-    } else {
       user = await User.create({
         name,
         email,
         googleId,
         avatar: picture,
+        profilePicture: picture,
+        authProvider: 'google',
+        isVerified: true
       });
       
       // Set admin role for specific email
@@ -221,6 +272,16 @@ exports.googleLogin = async (req, res) => {
         user.role = 'admin';
         await user.save();
       }
+
+      // Create system notification for new user registration (Google signup)
+      await Notification.create({
+        title: 'New User Registered',
+        message: `User ${user.name} (${user.email}) registered using Google OAuth.`,
+        type: 'success',
+        targetId: user._id,
+        targetModel: 'User',
+        recipientRole: 'admin'
+      });
     }
 
     const avatar = resolveAvatar(user);
@@ -233,9 +294,14 @@ exports.googleLogin = async (req, res) => {
       name: user.name,
       email: user.email,
       avatar,
+      profilePicture: user.profilePicture || avatar,
       mobile: user.mobile || '',
+      mobileNumber: user.mobileNumber || user.mobile || '',
       upiId: user.upiId || '',
       role: user.role,
+      authProvider: user.authProvider || 'local',
+      isMobileVerified: user.isMobileVerified || false,
+      status: user.status || 'active',
       token: generateToken(user._id),
     });
   } catch (error) {
@@ -249,30 +315,41 @@ exports.updateProfile = async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const { name, mobile, upiId, avatar } = req.body;
+    const { name, mobile, mobileNumber, upiId, avatar, profilePicture } = req.body;
     
     if (name) user.name = name;
     if (mobile !== undefined) user.mobile = mobile;
+    if (mobileNumber !== undefined) user.mobileNumber = mobileNumber;
     if (upiId !== undefined) user.upiId = upiId;
     
-    if (avatar) {
-      if (avatar.startsWith('data:image')) {
-        const imageUrl = await uploadToCloudinary(avatar);
+    const newAvatar = avatar || profilePicture;
+    if (newAvatar) {
+      if (newAvatar.startsWith('data:image')) {
+        const imageUrl = await uploadToCloudinary(newAvatar);
         user.avatar = imageUrl;
+        user.profilePicture = imageUrl;
       } else {
-        user.avatar = avatar;
+        user.avatar = newAvatar;
+        user.profilePicture = newAvatar;
       }
     }
 
     const updatedUser = await user.save();
+    const avatarUrl = resolveAvatar(updatedUser);
     
     res.json({
       _id: updatedUser._id,
       name: updatedUser.name,
       email: updatedUser.email,
-      avatar: resolveAvatar(updatedUser),
+      avatar: avatarUrl,
+      profilePicture: updatedUser.profilePicture || avatarUrl,
       mobile: updatedUser.mobile,
+      mobileNumber: updatedUser.mobileNumber,
       upiId: updatedUser.upiId,
+      role: updatedUser.role,
+      authProvider: updatedUser.authProvider,
+      isMobileVerified: updatedUser.isMobileVerified,
+      status: updatedUser.status,
       token: generateToken(updatedUser._id)
     });
   } catch (error) {
@@ -285,11 +362,12 @@ exports.requestPasswordResetOTP = async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
+    const cleanEmail = user.email.trim().toLowerCase();
     const otpCode = generateOTP();
-    await OTP.deleteMany({ email: user.email });
-    await OTP.create({ email: user.email, otp: otpCode });
+    await OTP.deleteMany({ email: cleanEmail });
+    await OTP.create({ email: cleanEmail, otp: otpCode });
 
-    await sendOTP(user.email, otpCode);
+    await sendOTP(cleanEmail, otpCode);
     res.json({ message: 'Verification code sent to your email' });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -303,7 +381,15 @@ exports.verifyPasswordResetOTP = async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const otpRecord = await OTP.findOne({ email: user.email, otp });
+    const cleanEmail = user.email.trim().toLowerCase();
+    const cleanOtp = otp ? String(otp).trim() : '';
+
+    const otpRecord = await OTP.findOne({
+      email: cleanEmail,
+      otp: cleanOtp,
+      expiresAt: { $gt: new Date() }
+    });
+
     if (!otpRecord) {
       return res.status(400).json({ message: 'Invalid or expired verification code' });
     }
@@ -311,7 +397,7 @@ exports.verifyPasswordResetOTP = async (req, res) => {
     user.password = newPassword;
     await user.save();
     
-    await OTP.deleteMany({ email: user.email });
+    await OTP.deleteMany({ email: cleanEmail });
 
     res.json({ message: 'Password updated successfully' });
   } catch (error) {
@@ -324,18 +410,19 @@ exports.forgotPassword = async (req, res) => {
   const { email } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    const user = await User.findOne({ email: cleanEmail });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     // Generate and send OTP
     const otpCode = generateOTP();
-    await OTP.deleteMany({ email }); // Delete old OTPs
-    await OTP.create({ email, otp: otpCode });
+    await OTP.deleteMany({ email: cleanEmail }); // Delete old OTPs
+    await OTP.create({ email: cleanEmail, otp: otpCode });
 
     try {
-      await sendOTP(email, otpCode);
+      await sendOTP(cleanEmail, otpCode);
       res.json({ message: 'Password reset OTP sent to your email' });
     } catch (emailError) {
       console.error('Email sending failed:', emailError);
@@ -350,7 +437,15 @@ exports.verifyForgotPasswordOTP = async (req, res) => {
   const { email, otp } = req.body;
 
   try {
-    const otpRecord = await OTP.findOne({ email, otp });
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    const cleanOtp = otp ? String(otp).trim() : '';
+
+    const otpRecord = await OTP.findOne({
+      email: cleanEmail,
+      otp: cleanOtp,
+      expiresAt: { $gt: new Date() }
+    });
+
     if (!otpRecord) {
       return res.status(400).json({ message: 'Invalid or expired OTP' });
     }
@@ -366,6 +461,9 @@ exports.resetPassword = async (req, res) => {
   const { email, otp, newPassword, confirmPassword } = req.body;
 
   try {
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    const cleanOtp = otp ? String(otp).trim() : '';
+
     // Validate passwords match
     if (newPassword !== confirmPassword) {
       return res.status(400).json({ message: 'Passwords do not match' });
@@ -377,13 +475,18 @@ exports.resetPassword = async (req, res) => {
     }
 
     // Verify OTP
-    const otpRecord = await OTP.findOne({ email, otp });
+    const otpRecord = await OTP.findOne({
+      email: cleanEmail,
+      otp: cleanOtp,
+      expiresAt: { $gt: new Date() }
+    });
+
     if (!otpRecord) {
       return res.status(400).json({ message: 'Invalid or expired OTP' });
     }
 
     // Update password
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: cleanEmail });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -392,7 +495,7 @@ exports.resetPassword = async (req, res) => {
     await user.save();
     
     // Delete OTP record
-    await OTP.deleteMany({ email });
+    await OTP.deleteMany({ email: cleanEmail });
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {

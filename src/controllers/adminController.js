@@ -4,6 +4,9 @@ const Expense = require('../models/Expense');
 const Settlement = require('../models/Settlement');
 const Report = require('../models/Report');
 const LoginLog = require('../models/LoginLog');
+const AdminActivityLog = require('../models/AdminActivityLog');
+const Notification = require('../models/Notification');
+const { uploadToCloudinary } = require('../services/cloudinaryService');
 
 // Dashboard stats
 exports.getDashboardStats = async (req, res) => {
@@ -94,10 +97,23 @@ exports.blockUser = async (req, res) => {
     const { id } = req.params;
     const { isBlocked } = req.body;
 
-    const user = await User.findByIdAndUpdate(id, { isBlocked }, { new: true });
+    const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+
+    user.isBlocked = isBlocked;
+    user.status = isBlocked ? 'suspended' : 'active';
+    await user.save();
+
+    // Log the admin action
+    await AdminActivityLog.create({
+      adminId: req.user._id,
+      action: isBlocked ? 'BLOCK_USER' : 'UNBLOCK_USER',
+      targetId: user._id,
+      targetModel: 'User',
+      details: { username: user.name, email: user.email }
+    });
 
     res.json({ message: `User ${isBlocked ? 'blocked' : 'unblocked'} successfully`, user });
   } catch (error) {
@@ -141,14 +157,25 @@ exports.deleteGroup = async (req, res) => {
   try {
     const { id } = req.params;
 
+    const group = await Group.findById(id);
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
     // Delete related expenses and settlements
     await Expense.deleteMany({ groupId: id });
     await Settlement.deleteMany({ groupId: id });
 
-    const group = await Group.findByIdAndDelete(id);
-    if (!group) {
-      return res.status(404).json({ message: 'Group not found' });
-    }
+    await Group.findByIdAndDelete(id);
+
+    // Log the admin action
+    await AdminActivityLog.create({
+      adminId: req.user._id,
+      action: 'DELETE_GROUP',
+      targetId: group._id,
+      targetModel: 'Group',
+      details: { name: group.name }
+    });
 
     res.json({ message: 'Group deleted successfully' });
   } catch (error) {
@@ -263,6 +290,15 @@ exports.flagSettlement = async (req, res) => {
       return res.status(404).json({ message: 'Settlement not found' });
     }
 
+    // Log the admin action
+    await AdminActivityLog.create({
+      adminId: req.user._id,
+      action: flagged ? 'FLAG_SETTLEMENT' : 'UNFLAG_SETTLEMENT',
+      targetId: settlement._id,
+      targetModel: 'Settlement',
+      details: { reason }
+    });
+
     res.json({ message: `Settlement ${flagged ? 'flagged' : 'unflagged'} successfully`, settlement });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -277,6 +313,15 @@ exports.deleteSettlement = async (req, res) => {
     if (!settlement) {
       return res.status(404).json({ message: 'Settlement not found' });
     }
+
+    // Log the admin action
+    await AdminActivityLog.create({
+      adminId: req.user._id,
+      action: 'DELETE_SETTLEMENT',
+      targetId: settlement._id,
+      targetModel: 'Settlement',
+      details: { amount: settlement.amount }
+    });
 
     res.json({ message: 'Settlement deleted successfully' });
   } catch (error) {
@@ -294,8 +339,8 @@ exports.getAllReports = async (req, res) => {
     if (status !== 'all') filter.status = status;
 
     const reports = await Report.find(filter)
-      .populate('reportedBy', 'name email')
-      .populate('resolvedBy', 'name email')
+      .populate('reportedBy', 'name email avatar')
+      .populate('resolvedBy', 'name email avatar')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -330,6 +375,15 @@ exports.resolveReport = async (req, res) => {
       return res.status(404).json({ message: 'Report not found' });
     }
 
+    // Log the admin action
+    await AdminActivityLog.create({
+      adminId: req.user.id,
+      action: 'RESOLVE_REPORT',
+      targetId: report._id,
+      targetModel: 'Report',
+      details: { status, adminNote }
+    });
+
     res.json({ message: 'Report resolved successfully', report });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -360,6 +414,204 @@ exports.getLoginLogs = async (req, res) => {
       page: parseInt(page),
       pages: Math.ceil(total / limit)
     });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Admin User Edit
+exports.updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, mobileNumber, mobile, avatar, profilePicture, role, status, isBlocked } = req.body;
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const changes = {};
+
+    if (name !== undefined && name !== user.name) {
+      if (!name.trim()) return res.status(400).json({ message: 'Name cannot be empty' });
+      changes.name = { old: user.name, new: name };
+      user.name = name;
+    }
+
+    if (email !== undefined && email.toLowerCase().trim() !== user.email) {
+      const cleanEmail = email.toLowerCase().trim();
+      if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+        return res.status(400).json({ message: 'Please provide a valid email' });
+      }
+      const emailExists = await User.findOne({ email: cleanEmail, _id: { $ne: id } });
+      if (emailExists) {
+        return res.status(400).json({ message: 'Email is already taken by another user' });
+      }
+      changes.email = { old: user.email, new: cleanEmail };
+      user.email = cleanEmail;
+    }
+
+    const newMobile = mobileNumber !== undefined ? mobileNumber : mobile;
+    if (newMobile !== undefined && newMobile !== user.mobileNumber) {
+      changes.mobileNumber = { old: user.mobileNumber, new: newMobile };
+      user.mobileNumber = newMobile;
+      user.mobile = newMobile || '';
+    }
+
+    const newAvatar = profilePicture !== undefined ? profilePicture : avatar;
+    if (newAvatar !== undefined && newAvatar !== user.profilePicture) {
+      let finalAvatar = newAvatar;
+      if (newAvatar && newAvatar.startsWith('data:image')) {
+        finalAvatar = await uploadToCloudinary(newAvatar);
+      }
+      changes.profilePicture = { old: user.profilePicture, new: finalAvatar };
+      user.profilePicture = finalAvatar;
+      user.avatar = finalAvatar;
+    }
+
+    if (role !== undefined && role !== user.role) {
+      if (!['user', 'admin'].includes(role)) {
+        return res.status(400).json({ message: 'Invalid role' });
+      }
+      changes.role = { old: user.role, new: role };
+      user.role = role;
+    }
+
+    const newStatus = status !== undefined ? status : (isBlocked !== undefined ? (isBlocked ? 'suspended' : 'active') : undefined);
+    if (newStatus !== undefined && newStatus !== user.status) {
+      if (!['active', 'suspended'].includes(newStatus)) {
+        return res.status(400).json({ message: 'Invalid status' });
+      }
+      changes.status = { old: user.status, new: newStatus };
+      user.status = newStatus;
+      user.isBlocked = newStatus === 'suspended';
+    }
+
+    if (Object.keys(changes).length > 0) {
+      await user.save();
+
+      await AdminActivityLog.create({
+        adminId: req.user._id,
+        action: 'EDIT_USER',
+        targetId: user._id,
+        targetModel: 'User',
+        details: {
+          username: user.name,
+          email: user.email,
+          changes
+        }
+      });
+    }
+
+    res.json({ message: 'User updated successfully', user });
+  } catch (error) {
+    console.error('Error in updateUser:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Get Admin Activity Logs
+exports.getAdminActivityLogs = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, action = '' } = req.query;
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+    if (action) {
+      filter.action = action;
+    }
+
+    const logs = await AdminActivityLog.find(filter)
+      .populate('adminId', 'name email avatar')
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await AdminActivityLog.countDocuments(filter);
+
+    res.json({
+      logs,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit)
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Notifications Management
+exports.getAllNotifications = async (req, res) => {
+  try {
+    const { page = 1, limit = 15, type = 'all', isRead = 'all' } = req.query;
+    const skip = (page - 1) * limit;
+
+    const filter = { recipientRole: 'admin' };
+    if (type !== 'all') filter.type = type;
+    if (isRead !== 'all') filter.isRead = isRead === 'true';
+
+    const notifications = await Notification.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Notification.countDocuments(filter);
+    const unreadCount = await Notification.countDocuments({ recipientRole: 'admin', isRead: false });
+
+    res.json({
+      notifications,
+      total,
+      unreadCount,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit)
+    });
+  } catch (error) {
+    console.error('Error fetching admin notifications:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.markNotificationAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const notification = await Notification.findByIdAndUpdate(
+      id,
+      { isRead: true },
+      { new: true }
+    );
+
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+
+    res.json({ message: 'Notification marked as read', notification });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.markAllNotificationsAsRead = async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { recipientRole: 'admin', isRead: false },
+      { isRead: true }
+    );
+    res.json({ message: 'All notifications marked as read' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.deleteNotification = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const notification = await Notification.findByIdAndDelete(id);
+
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+
+    res.json({ message: 'Notification deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

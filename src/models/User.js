@@ -30,6 +30,11 @@ const userSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  mobileNumber: {
+    type: String,
+    trim: true,
+    default: null
+  },
   upiId: {
     type: String,
     trim: true,
@@ -42,7 +47,15 @@ const userSchema = new mongoose.Schema({
       return `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=random`;
     }
   },
+  profilePicture: {
+    type: String,
+    default: null
+  },
   isVerified: {
+    type: Boolean,
+    default: false
+  },
+  isMobileVerified: {
     type: Boolean,
     default: false
   },
@@ -54,9 +67,47 @@ const userSchema = new mongoose.Schema({
   isBlocked: {
     type: Boolean,
     default: false
+  },
+  status: {
+    type: String,
+    enum: ['active', 'suspended'],
+    default: 'active'
+  },
+  authProvider: {
+    type: String,
+    enum: ['local', 'google'],
+    default: 'local'
   }
 }, {
   timestamps: true
+});
+
+// Pre-save hook to keep old and new fields in sync
+userSchema.pre('save', function() {
+  // Sync avatar and profilePicture
+  if (this.isModified('avatar') && !this.isModified('profilePicture')) {
+    this.profilePicture = this.avatar;
+  } else if (this.isModified('profilePicture') && !this.isModified('avatar')) {
+    this.avatar = this.profilePicture;
+  } else if (!this.avatar && this.profilePicture) {
+    this.avatar = this.profilePicture;
+  } else if (!this.profilePicture && this.avatar) {
+    this.profilePicture = this.avatar;
+  }
+
+  // Sync mobile and mobileNumber
+  if (this.isModified('mobile') && !this.isModified('mobileNumber')) {
+    this.mobileNumber = this.mobile;
+  } else if (this.isModified('mobileNumber') && !this.isModified('mobile')) {
+    this.mobile = this.mobileNumber || '';
+  }
+
+  // Sync isBlocked and status
+  if (this.isModified('isBlocked') && !this.isModified('status')) {
+    this.status = this.isBlocked ? 'suspended' : 'active';
+  } else if (this.isModified('status') && !this.isModified('isBlocked')) {
+    this.isBlocked = this.status === 'suspended';
+  }
 });
 userSchema.pre('save', async function() {
   if (!this.isModified('password')) return;

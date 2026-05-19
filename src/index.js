@@ -16,6 +16,7 @@ const settlementRoutes = require('./routes/settlementRoutes');
 const historyRoutes = require('./routes/historyRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const reportRoutes = require('./routes/reportRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -124,6 +125,7 @@ app.use('/api/settlements', settlementRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/reports', reportRoutes);
 
 // ❌ NO app.listen() here for Vercel
 // But we need it for local development

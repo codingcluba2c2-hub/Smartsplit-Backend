@@ -26,7 +26,7 @@ const sendOTP = async (email, otp) => {
         <div style="background: #f3f4f6; color: #1f2937; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; border-radius: 10px; margin: 20px 0;">
           ${otp}
         </div>
-        <p>This code will expire in 10 minutes.</p>
+        <p>This code will expire in 15 minutes.</p>
         <p>If you didn't request this code, please ignore this email.</p>
         <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
         <p style="color: #9ca3af; font-size: 12px; text-align: center;">© 2024 SmartSplit. All rights reserved.</p>

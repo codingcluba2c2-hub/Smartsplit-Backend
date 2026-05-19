@@ -13,6 +13,7 @@ router.get('/dashboard', adminController.getDashboardStats);
 
 // User Management
 router.get('/users', adminController.getAllUsers);
+router.put('/users/:id', adminController.updateUser);
 router.patch('/users/:id/block', adminController.blockUser);
 
 // Group Management
@@ -34,5 +35,12 @@ router.patch('/reports/:id/resolve', adminController.resolveReport);
 
 // Activity Logs
 router.get('/login-logs', adminController.getLoginLogs);
+router.get('/activity-logs', adminController.getAdminActivityLogs);
+
+// Notifications System
+router.get('/notifications', adminController.getAllNotifications);
+router.patch('/notifications/read-all', adminController.markAllNotificationsAsRead);
+router.patch('/notifications/:id/read', adminController.markNotificationAsRead);
+router.delete('/notifications/:id', adminController.deleteNotification);
 
 module.exports = router;
