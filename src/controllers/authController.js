@@ -257,6 +257,7 @@ exports.googleLogin = async (req, res) => {
       if (isModified) {
         await user.save();
       }
+    } else {
       user = await User.create({
         name,
         email,
