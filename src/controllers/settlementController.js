@@ -1,5 +1,6 @@
 const Group = require('../models/Group');
 const Settlement = require('../models/Settlement');
+const Notification = require('../models/Notification');
 
 exports.createSettlement = async (req, res) => {
   const { groupId, payerId: customPayerId, receiverId, amount, paymentType, screenshot, note } = req.body;
@@ -66,8 +67,8 @@ exports.getGroupSettlements = async (req, res) => {
 };
 
 exports.respondSettlement = async (req, res) => {
-  const { action } = req.body;
-  const validActions = ['accept', 'reject'];
+  const { action, disputeReason } = req.body;
+  const validActions = ['accept', 'dispute'];
 
   try {
     const settlement = await Settlement.findById(req.params.id);
@@ -82,8 +83,45 @@ exports.respondSettlement = async (req, res) => {
       return res.status(400).json({ message: 'Invalid action' });
     }
 
-    settlement.status = action === 'accept' ? 'completed' : 'rejected';
-    settlement.settledAt = new Date();
+    if (action === 'accept') {
+      settlement.status = 'completed';
+      settlement.settledAt = new Date();
+      
+      await Notification.create({
+        title: 'Settlement Accepted',
+        message: 'Your settlement request has been accepted.',
+        type: 'success',
+        targetId: settlement._id,
+        targetModel: 'Settlement',
+        recipientRole: 'user',
+        recipientId: settlement.payerId
+      });
+    } else if (action === 'dispute') {
+      settlement.status = 'disputed';
+      if (disputeReason) {
+        settlement.disputeReason = disputeReason;
+      }
+      
+      await Notification.create({
+        title: 'Settlement Disputed',
+        message: 'A settlement request requires admin review due to a dispute.',
+        type: 'alert',
+        targetId: settlement._id,
+        targetModel: 'Settlement',
+        recipientRole: 'admin'
+      });
+      
+      await Notification.create({
+        title: 'Settlement Disputed',
+        message: `Your settlement request was disputed: ${disputeReason || 'No reason provided'}`,
+        type: 'alert',
+        targetId: settlement._id,
+        targetModel: 'Settlement',
+        recipientRole: 'user',
+        recipientId: settlement.payerId
+      });
+    }
+    
     await settlement.save();
 
     res.json(settlement);

@@ -279,3 +279,90 @@ exports.deleteGroup = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.getGroupPayments = async (req, res) => {
+  try {
+    const { id } = req.params; // groupId
+    const { payerId, category, startDate, endDate, sort, search, page = 1, limit = 10 } = req.query;
+
+    const group = await Group.findById(id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+
+    const isMember = ensureGroupMember(group, req.user._id.toString());
+    if (!isMember) return res.status(403).json({ message: 'Not authorized to view this group' });
+
+    const filter = { groupId: id };
+    
+    if (payerId) filter.paidBy = payerId;
+    if (category) filter.category = category;
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) filter.createdAt.$lte = new Date(endDate);
+    }
+    if (search) {
+      filter.description = { $regex: search, $options: 'i' };
+    }
+
+    let sortOptions = { createdAt: -1 }; // default Newest
+    if (sort === 'oldest') sortOptions = { createdAt: 1 };
+    else if (sort === 'highest') sortOptions = { amount: -1 };
+    else if (sort === 'lowest') sortOptions = { amount: 1 };
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [payments, total, allFilteredPayments] = await Promise.all([
+      Expense.find(filter)
+        .populate('paidBy', 'name email avatar')
+        .populate('addedBy', 'name email avatar')
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Expense.countDocuments(filter),
+      Expense.find(filter).select('amount createdAt')
+    ]);
+
+    // Calculate Summary
+    const summary = {
+      totalPaid: 0,
+      totalExpensesPaid: total,
+      averageExpense: 0,
+      largestExpense: 0,
+      recentExpense: null,
+      totalReimbursed: 0,
+      netBalance: 0
+    };
+
+    if (allFilteredPayments.length > 0) {
+      summary.totalPaid = allFilteredPayments.reduce((sum, exp) => sum + exp.amount, 0);
+      summary.averageExpense = summary.totalPaid / total;
+      summary.largestExpense = Math.max(...allFilteredPayments.map(exp => exp.amount));
+      
+      const sortedByDate = [...allFilteredPayments].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      summary.recentExpense = sortedByDate[0];
+    }
+
+    if (payerId) {
+      const settlements = await Settlement.find({
+        groupId: id,
+        receiverId: payerId,
+        status: { $in: ['admin_approved', 'completed'] }
+      });
+      summary.totalReimbursed = settlements.reduce((sum, s) => sum + s.amount, 0);
+      summary.netBalance = summary.totalPaid - summary.totalReimbursed;
+    }
+
+    res.json({
+      summary,
+      payments,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

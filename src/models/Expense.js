@@ -68,4 +68,8 @@ const expenseSchema = new mongoose.Schema({
   timestamps: true
 });
 
+expenseSchema.index({ groupId: 1, paidBy: 1, category: 1, createdAt: -1 });
+expenseSchema.index({ paidBy: 1 });
+expenseSchema.index({ groupId: 1 });
+
 module.exports = mongoose.model('Expense', expenseSchema);

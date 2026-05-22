@@ -115,7 +115,114 @@ exports.blockUser = async (req, res) => {
       details: { username: user.name, email: user.email }
     });
 
+    if (isBlocked) {
+      await Notification.create({
+        title: 'Account Blocked',
+        message: 'Your account has been blocked.',
+        type: 'alert',
+        targetId: user._id,
+        targetModel: 'User',
+        recipientRole: 'user',
+        recipientId: user._id
+      });
+    }
+
     res.json({ message: `User ${isBlocked ? 'blocked' : 'unblocked'} successfully`, user });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.unblockUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.isBlocked = false;
+    user.status = 'active';
+    await user.save();
+
+    await AdminActivityLog.create({
+      adminId: req.user._id,
+      action: 'UNBLOCK_USER',
+      targetId: user._id,
+      targetModel: 'User',
+      details: { username: user.name, email: user.email }
+    });
+
+    res.json({ message: 'User unblocked successfully', user });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.updateUserUpi = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { upiId } = req.body;
+    
+    if (!upiId || upiId.trim() === '') {
+       return res.status(400).json({ message: 'UPI ID is required' });
+    }
+    
+    if (!/^[a-zA-Z0-9._-]+@[a-zA-Z]+$/.test(upiId)) {
+       return res.status(400).json({ message: 'Invalid UPI ID format' });
+    }
+
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.upiId = upiId;
+    await user.save();
+
+    await AdminActivityLog.create({
+      adminId: req.user._id,
+      action: 'EDIT_UPI',
+      targetId: user._id,
+      targetModel: 'User',
+      details: { username: user.name, newUpi: upiId }
+    });
+
+    await Notification.create({
+      title: 'UPI ID Updated',
+      message: 'Your payment UPI was updated by Admin.',
+      type: 'info',
+      targetId: user._id,
+      targetModel: 'User',
+      recipientRole: 'user',
+      recipientId: user._id
+    });
+
+    res.json({ message: 'UPI Updated Successfully', user });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    user.isDeleted = true;
+    user.deletedAt = new Date();
+    user.deletedBy = req.user._id;
+    user.status = 'suspended';
+    await user.save();
+
+    await AdminActivityLog.create({
+      adminId: req.user._id,
+      action: 'DELETE_USER',
+      targetId: user._id,
+      targetModel: 'User',
+      details: { username: user.name, email: user.email }
+    });
+
+    res.json({ message: 'User account deactivated successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -272,6 +379,109 @@ exports.getAllSettlements = async (req, res) => {
     });
   } catch (error) {
     console.error('Error in getAllSettlements:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.forceCompleteSettlement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { ownerCompletionReason } = req.body;
+
+    const settlement = await Settlement.findById(id);
+    if (!settlement) {
+      return res.status(404).json({ message: 'Settlement not found' });
+    }
+
+    if (settlement.status !== 'pending' && settlement.status !== 'disputed') {
+      return res.status(400).json({ message: 'Only pending or disputed settlements can be force completed' });
+    }
+
+    settlement.status = 'completed';
+    settlement.completedByOwner = true;
+    settlement.completedBy = req.user._id;
+    settlement.completedAt = new Date();
+    if (ownerCompletionReason) {
+      settlement.ownerCompletionReason = ownerCompletionReason;
+    }
+    
+    // Maintain old fields for backward compatibility if needed, but primary is completedByOwner
+    settlement.adminApproved = true;
+    settlement.adminApprovedBy = req.user._id;
+    settlement.adminApprovedAt = new Date();
+    
+    await settlement.save();
+
+    await AdminActivityLog.create({
+      adminId: req.user._id,
+      action: 'OWNER_FORCE_COMPLETED_SETTLEMENT',
+      targetId: settlement._id,
+      targetModel: 'Settlement',
+      details: { amount: settlement.amount, status: settlement.status, reason: ownerCompletionReason }
+    });
+
+    // Notify Sender
+    await Notification.create({
+      title: 'Settlement Force Completed',
+      message: 'Your settlement has been completed by the App Owner after payment verification.',
+      type: 'success',
+      targetId: settlement._id,
+      targetModel: 'Settlement',
+      recipientRole: 'user',
+      recipientId: settlement.payerId
+    });
+
+    // Notify Receiver
+    await Notification.create({
+      title: 'Settlement Force Completed',
+      message: 'This settlement has been completed by the App Owner after payment verification.',
+      type: 'info',
+      targetId: settlement._id,
+      targetModel: 'Settlement',
+      recipientRole: 'user',
+      recipientId: settlement.receiverId
+    });
+
+    res.json({ message: 'Settlement force completed successfully', settlement });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.rejectSettlement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rejectionReason } = req.body;
+    
+    const settlement = await Settlement.findById(id);
+    if (!settlement) {
+      return res.status(404).json({ message: 'Settlement not found' });
+    }
+
+    settlement.status = 'rejected';
+    settlement.rejectionReason = rejectionReason || 'Rejected by admin without reason';
+    await settlement.save();
+
+    await AdminActivityLog.create({
+      adminId: req.user._id,
+      action: 'REJECT_SETTLEMENT',
+      targetId: settlement._id,
+      targetModel: 'Settlement',
+      details: { amount: settlement.amount, reason: settlement.rejectionReason }
+    });
+
+    await Notification.create({
+      title: 'Settlement Rejected',
+      message: `Your settlement was rejected. Reason: ${settlement.rejectionReason}`,
+      type: 'alert',
+      targetId: settlement._id,
+      targetModel: 'Settlement',
+      recipientRole: 'user',
+      recipientId: settlement.addedBy
+    });
+
+    res.json({ message: 'Settlement rejected successfully', settlement });
+  } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };

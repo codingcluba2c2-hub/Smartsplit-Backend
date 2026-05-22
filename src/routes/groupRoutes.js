@@ -9,7 +9,8 @@ const {
   removeMember,
   getFriends,
   updateGroup,
-  deleteGroup
+  deleteGroup,
+  getGroupPayments
 } = require('../controllers/groupController');
 const { protect } = require('../middlewares/authMiddleware');
 
@@ -19,6 +20,7 @@ router.get('/friends', getFriends);
 router.post('/', createGroup);
 router.get('/', getGroups);
 router.get('/:id', getGroupById);
+router.get('/:id/payments', getGroupPayments);
 router.put('/:id', updateGroup);
 router.delete('/:id', deleteGroup);
 router.get('/:id/members', getGroupMembers);

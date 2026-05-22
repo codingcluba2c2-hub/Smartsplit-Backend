@@ -178,6 +178,12 @@ exports.loginUser = async (req, res) => {
   try {
     const user = await User.findOne({ email }).select('+password');
     if (user && (await user.comparePassword(password, user.password))) {
+      if (user.isDeleted) {
+        return res.status(401).json({ message: 'Your account has been deactivated.' });
+      }
+      if (user.isBlocked) {
+        return res.status(403).json({ message: 'Your account has been blocked by the administrator. Please contact the administrator to reactivate your account.' });
+      }
       if (!user.isVerified && !user.googleId) {
         return res.status(403).json({ 
           message: 'Please verify your email to login', 
@@ -235,6 +241,13 @@ exports.googleLogin = async (req, res) => {
     let user = await User.findOne({ email });
 
     if (user) {
+      if (user.isDeleted) {
+        return res.status(401).json({ message: 'Your account has been deactivated.' });
+      }
+      if (user.isBlocked) {
+        return res.status(403).json({ message: 'Your account has been blocked by the administrator. Please contact the administrator to reactivate your account.' });
+      }
+
       // Update googleId if not present
       let isModified = false;
       if (!user.googleId) {

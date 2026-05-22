@@ -36,11 +36,45 @@ const settlementSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'completed', 'rejected'],
+    enum: ['pending', 'completed', 'disputed', 'rejected'],
     default: 'pending'
+  },
+  adminApproved: {
+    type: Boolean,
+    default: false
+  },
+  adminApprovedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  adminApprovedAt: {
+    type: Date
+  },
+  rejectionReason: {
+    type: String,
+    trim: true
+  },
+  disputeReason: {
+    type: String,
+    trim: true
   },
   settledAt: {
     type: Date
+  },
+  completedByOwner: {
+    type: Boolean,
+    default: false
+  },
+  completedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  completedAt: {
+    type: Date
+  },
+  ownerCompletionReason: {
+    type: String,
+    trim: true
   },
   addedBy: {
     type: mongoose.Schema.Types.ObjectId,

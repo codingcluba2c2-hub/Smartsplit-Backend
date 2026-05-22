@@ -15,6 +15,9 @@ router.get('/dashboard', adminController.getDashboardStats);
 router.get('/users', adminController.getAllUsers);
 router.put('/users/:id', adminController.updateUser);
 router.patch('/users/:id/block', adminController.blockUser);
+router.patch('/users/:id/unblock', adminController.unblockUser);
+router.patch('/users/:id/update-upi', adminController.updateUserUpi);
+router.delete('/users/:id', adminController.deleteUser);
 
 // Group Management
 router.get('/groups', adminController.getAllGroups);
@@ -26,6 +29,8 @@ router.get('/expenses', adminController.getAllExpenses);
 
 // Settlement Monitoring
 router.get('/settlements', adminController.getAllSettlements);
+router.patch('/settlements/:id/force-complete', adminController.forceCompleteSettlement);
+router.patch('/settlements/:id/reject', adminController.rejectSettlement);
 router.patch('/settlements/:id/flag', adminController.flagSettlement);
 router.delete('/settlements/:id', adminController.deleteSettlement);
 

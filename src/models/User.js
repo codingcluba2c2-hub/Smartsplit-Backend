@@ -38,7 +38,14 @@ const userSchema = new mongoose.Schema({
   upiId: {
     type: String,
     trim: true,
-    default: ''
+    default: '',
+    validate: {
+      validator: function(v) {
+        if (!v) return true;
+        return /^[a-zA-Z0-9._-]+@[a-zA-Z]+$/.test(v);
+      },
+      message: 'Please provide a valid UPI ID'
+    }
   },
   avatar: {
     type: String,
@@ -67,6 +74,24 @@ const userSchema = new mongoose.Schema({
   isBlocked: {
     type: Boolean,
     default: false
+  },
+  blockedAt: {
+    type: Date
+  },
+  blockedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: {
+    type: Date
+  },
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
   status: {
     type: String,
