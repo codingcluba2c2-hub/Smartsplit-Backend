@@ -5,12 +5,14 @@ const {
   verifyEmail, resendOTP, updateProfile, 
   requestPasswordResetOTP, verifyPasswordResetOTP,
   forgotPassword, verifyForgotPasswordOTP, resetPassword,
-  changePassword
+  changePassword, refreshToken, logoutUser
 } = require('../controllers/authController');
 const { protect } = require('../middlewares/authMiddleware');
 
 router.post('/register', registerUser);
 router.post('/login', loginUser);
+router.post('/refresh', refreshToken);
+router.post('/logout', logoutUser);
 router.post('/google-login', googleLogin);
 router.post('/verify-email', verifyEmail);
 router.post('/resend-otp', resendOTP);

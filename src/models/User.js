@@ -71,6 +71,10 @@ const userSchema = new mongoose.Schema({
     enum: ['user', 'admin'],
     default: 'user'
   },
+  isAppOwner: {
+    type: Boolean,
+    default: false
+  },
   isBlocked: {
     type: Boolean,
     default: false

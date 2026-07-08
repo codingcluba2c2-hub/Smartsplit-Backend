@@ -37,7 +37,50 @@ const generateOTP = () => {
 };
 
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '15m' }); // Short-lived access token
+};
+
+const generateRefreshToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' }); // Long-lived refresh token
+};
+
+const Session = require('../models/Session');
+const crypto = require('crypto');
+
+const setAuthCookies = async (res, req, userId) => {
+  const accessToken = generateToken(userId);
+  const refreshToken = generateRefreshToken(userId);
+  
+  // Hash refresh token for DB storage
+  const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
+  
+  const agent = useragent.parse(req.headers['user-agent']);
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+  // Create new session
+  await Session.create({
+    user: userId,
+    refreshToken: hashedToken,
+    ipAddress: ip,
+    userAgent: req.headers['user-agent'],
+    device: agent.device.toString(),
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+  });
+
+  // Set cookies
+  res.cookie('accessToken', accessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 15 * 60 * 1000 // 15 mins
+  });
+
+  res.cookie('refreshToken', refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  });
 };
 
 const getAvatarUrl = (name) => {
@@ -131,6 +174,8 @@ exports.verifyEmail = async (req, res) => {
     await OTP.deleteMany({ email: cleanEmail });
 
     const avatar = resolveAvatar(user);
+    
+    await setAuthCookies(res, req, user._id);
 
     res.json({
       _id: user._id,
@@ -142,10 +187,10 @@ exports.verifyEmail = async (req, res) => {
       mobileNumber: user.mobileNumber || user.mobile || '',
       upiId: user.upiId || '',
       role: user.role,
+      isAppOwner: user.isAppOwner || false,
       authProvider: user.authProvider || 'local',
       isMobileVerified: user.isMobileVerified || false,
-      status: user.status || 'active',
-      token: generateToken(user._id)
+      status: user.status || 'active'
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -196,6 +241,7 @@ exports.loginUser = async (req, res) => {
       
       // Log login activity
       await logLogin(req, user);
+      await setAuthCookies(res, req, user._id);
 
       res.json({
         _id: user._id,
@@ -207,10 +253,10 @@ exports.loginUser = async (req, res) => {
         mobileNumber: user.mobileNumber || user.mobile || '',
         upiId: user.upiId || '',
         role: user.role,
+        isAppOwner: user.isAppOwner || false,
         authProvider: user.authProvider || 'local',
         isMobileVerified: user.isMobileVerified || false,
-        status: user.status || 'active',
-        token: generateToken(user._id)
+        status: user.status || 'active'
       });
     } else {
       res.status(401).json({ message: 'Invalid email or password' });
@@ -302,6 +348,7 @@ exports.googleLogin = async (req, res) => {
 
     // Log login activity
     await logLogin(req, user);
+    await setAuthCookies(res, req, user._id);
 
     res.json({
       _id: user._id,
@@ -313,10 +360,10 @@ exports.googleLogin = async (req, res) => {
       mobileNumber: user.mobileNumber || user.mobile || '',
       upiId: user.upiId || '',
       role: user.role,
+      isAppOwner: user.isAppOwner || false,
       authProvider: user.authProvider || 'local',
       isMobileVerified: user.isMobileVerified || false,
-      status: user.status || 'active',
-      token: generateToken(user._id),
+      status: user.status || 'active'
     });
   } catch (error) {
     console.error('Google authentication error:', error);
@@ -361,10 +408,10 @@ exports.updateProfile = async (req, res) => {
       mobileNumber: updatedUser.mobileNumber,
       upiId: updatedUser.upiId,
       role: updatedUser.role,
+      isAppOwner: updatedUser.isAppOwner || false,
       authProvider: updatedUser.authProvider,
       isMobileVerified: updatedUser.isMobileVerified,
-      status: updatedUser.status,
-      token: generateToken(updatedUser._id)
+      status: updatedUser.status
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -557,4 +604,61 @@ exports.changePassword = async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
+};
+
+exports.refreshToken = async (req, res) => {
+  const { refreshToken } = req.cookies;
+  
+  if (!refreshToken) {
+    return res.status(401).json({ message: 'No refresh token' });
+  }
+
+  try {
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    
+    const session = await Session.findOne({
+      user: decoded.id,
+      refreshToken: hashedToken,
+      isRevoked: false,
+      expiresAt: { $gt: new Date() }
+    });
+
+    if (!session) {
+      return res.status(401).json({ message: 'Invalid refresh token' });
+    }
+
+    // Invalidate old session
+    session.isRevoked = true;
+    await session.save();
+
+    // Generate new tokens and session
+    await setAuthCookies(res, req, decoded.id);
+
+    res.json({ message: 'Token refreshed successfully' });
+  } catch (error) {
+    console.error('Refresh token error:', error.message);
+    res.status(401).json({ message: 'Refresh token failed or expired' });
+  }
+};
+
+exports.logoutUser = async (req, res) => {
+  const { refreshToken } = req.cookies;
+  
+  if (refreshToken) {
+    try {
+      const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
+      await Session.findOneAndUpdate(
+        { refreshToken: hashedToken },
+        { isRevoked: true }
+      );
+    } catch (e) {
+      console.error('Error invalidating session during logout:', e);
+    }
+  }
+
+  res.clearCookie('accessToken');
+  res.clearCookie('refreshToken');
+  
+  res.json({ message: 'Logged out successfully' });
 };

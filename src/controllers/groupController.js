@@ -81,6 +81,7 @@ exports.getGroupById = async (req, res) => {
 
     const [expenses, settlements] = await Promise.all([
       Expense.find({ groupId: group._id })
+        .sort({ createdAt: -1 })
         .populate([
           { path: 'paidBy', select: 'name avatar upiId' },
           { path: 'addedBy', select: 'name avatar upiId' },
@@ -88,6 +89,7 @@ exports.getGroupById = async (req, res) => {
           { path: 'splitDetails.user', select: 'name avatar upiId' }
         ]),
       Settlement.find({ groupId: group._id })
+        .sort({ createdAt: -1 })
         .populate([
           { path: 'payerId', select: 'name avatar email upiId' },
           { path: 'receiverId', select: 'name avatar email upiId' },

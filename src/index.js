@@ -7,6 +7,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const http = require('http');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const socketService = require('./services/socketService');
 
 const authRoutes = require('./routes/authRoutes');
@@ -17,12 +19,13 @@ const historyRoutes = require('./routes/historyRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const databaseExplorerRoutes = require('./routes/databaseExplorerRoutes');
 
 const app = express();
 const server = http.createServer(app);
 
-// Enable trust proxy for real IP detection
-app.set('trust proxy', true);
+// Enable trust proxy for real IP detection behind Vercel/Nginx (1 hop)
+app.set('trust proxy', 1);
 
 // Initialize Socket.io
 socketService.init(server);
@@ -36,16 +39,50 @@ if (process.env.NODE_ENV !== 'production') {
 mongoose.set('bufferCommands', false);
 
 // Middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.use(cors());
+// CORS configuration MUST be before other middlewares
+app.use(cors({
+  origin: function (origin, callback) {
+    const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173'];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, origin || allowedOrigins[0]);
+    } else {
+      callback(null, false); // Block other origins explicitly
+    }
+  },
+  credentials: true, // Required to send cookies
+}));
+
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+})); // Security headers
+app.use(express.json({ limit: '10mb' })); // Reduced from 50mb for security
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
 app.use(cookieParser());
 
-// Security headers for Google Auth popups
+// Strict Origin Validation (CSRF Protection)
 app.use((req, res, next) => {
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173'];
+  const origin = req.headers.origin;
+  
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    if (!origin || !allowedOrigins.includes(origin)) {
+      return res.status(403).json({ message: 'CSRF violation: Invalid Origin' });
+    }
+  }
   next();
 });
+
+// Rate Limiting
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // limit each IP to 1000 requests per windowMs
+  message: 'Too many requests from this IP, please try again after 15 minutes',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', apiLimiter);
 
 // Database connection (Vercel optimized)
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -126,6 +163,7 @@ app.use('/api/history', historyRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/admin/db', databaseExplorerRoutes);
 
 // ❌ NO app.listen() here for Vercel
 // But we need it for local development
