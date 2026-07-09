@@ -57,7 +57,7 @@ app.use(cors({
 
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  crossOriginOpenerPolicy: false,
 })); // Security headers
 app.use(express.json({ limit: '10mb' })); // Reduced from 50mb for security
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
