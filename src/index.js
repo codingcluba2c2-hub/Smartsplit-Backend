@@ -42,12 +42,10 @@ mongoose.set('bufferCommands', false);
 // CORS configuration MUST be before other middlewares
 app.use(cors({
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      process.env.FRONTEND_URL,
-      'http://localhost:5173',
-      'https://smartsplitakhlaque.vercel.app',
-      'https://smart-split-git-main-akhlaque-rahmans-projects-38873038.vercel.app'
-    ].filter(Boolean);
+    const allowedOrigins = process.env.FRONTEND_URL 
+      ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
+      : ['http://localhost:5173', 'https://smartsplitakhlaque.vercel.app'];
+      
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, origin || allowedOrigins[0]);
     } else {
@@ -68,12 +66,10 @@ app.use(cookieParser());
 
 // Strict Origin Validation (CSRF Protection)
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    process.env.FRONTEND_URL,
-    'http://localhost:5173',
-    'https://smartsplitakhlaque.vercel.app',
-    'https://smart-split-git-main-akhlaque-rahmans-projects-38873038.vercel.app'
-  ].filter(Boolean);
+  const allowedOrigins = process.env.FRONTEND_URL 
+    ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
+    : ['http://localhost:5173', 'https://smartsplitakhlaque.vercel.app'];
+  
   const origin = req.headers.origin;
   
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
