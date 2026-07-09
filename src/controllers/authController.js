@@ -71,14 +71,14 @@ const setAuthCookies = async (res, req, userId) => {
   res.cookie('accessToken', accessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: 15 * 60 * 1000 // 15 mins
   });
 
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
 };
@@ -222,13 +222,23 @@ exports.loginUser = async (req, res) => {
 
   try {
     const user = await User.findOne({ email }).select('+password');
-    if (user && (await user.comparePassword(password, user.password))) {
-      if (user.isDeleted) {
-        return res.status(401).json({ message: 'Your account has been deactivated.' });
-      }
-      if (user.isBlocked) {
-        return res.status(403).json({ message: 'Your account has been blocked by the administrator. Please contact the administrator to reactivate your account.' });
-      }
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    if (user.isDeleted) {
+      return res.status(401).json({ message: 'Your account has been deactivated.' });
+    }
+    if (user.isBlocked) {
+      return res.status(403).json({ message: 'Your account has been blocked by the administrator.' });
+    }
+    
+    // Check account lockout
+    if (user.lockUntil && user.lockUntil > Date.now()) {
+      return res.status(403).json({ message: 'Your account has been temporarily blocked due to too many failed login attempts. Please try again later.' });
+    }
+
+    if (await user.comparePassword(password, user.password)) {
       if (!user.isVerified && !user.googleId) {
         return res.status(403).json({ 
           message: 'Please verify your email to login', 
@@ -236,6 +246,11 @@ exports.loginUser = async (req, res) => {
           email: user.email
         });
       }
+
+      // Reset login attempts on successful login
+      user.loginAttempts = 0;
+      user.lockUntil = undefined;
+      await user.save();
 
       const avatar = resolveAvatar(user);
       
@@ -259,6 +274,13 @@ exports.loginUser = async (req, res) => {
         status: user.status || 'active'
       });
     } else {
+      // Increment login attempts
+      user.loginAttempts = (user.loginAttempts || 0) + 1;
+      if (user.loginAttempts >= 5) {
+        user.lockUntil = new Date(Date.now() + 15 * 60 * 1000); // Lock for 15 mins
+      }
+      await user.save();
+      
       res.status(401).json({ message: 'Invalid email or password' });
     }
   } catch (error) {
@@ -657,8 +679,107 @@ exports.logoutUser = async (req, res) => {
     }
   }
 
-  res.clearCookie('accessToken');
-  res.clearCookie('refreshToken');
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  };
+  res.clearCookie('accessToken', cookieOptions);
+  res.clearCookie('refreshToken', cookieOptions);
   
   res.json({ message: 'Logged out successfully' });
+};
+
+exports.sendLoginOTP = async (req, res) => {
+  const { email } = req.body;
+  try {
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    const user = await User.findOne({ email: cleanEmail });
+    if (!user) {
+      return res.status(404).json({ message: 'No account exists with this email' });
+    }
+    if (user.isDeleted) {
+      return res.status(401).json({ message: 'Your account has been deactivated.' });
+    }
+    if (user.isBlocked) {
+      return res.status(403).json({ message: 'Your account has been blocked by the administrator.' });
+    }
+
+    const otpCode = generateOTP();
+    await OTP.deleteMany({ email: cleanEmail });
+    await OTP.create({ email: cleanEmail, otp: otpCode });
+
+    try {
+      await sendOTP(cleanEmail, otpCode);
+      res.json({ message: 'OTP sent to your email' });
+    } catch (emailError) {
+      console.error('Email sending failed:', emailError);
+      res.status(500).json({ message: 'Failed to send OTP. Please try again.' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.verifyLoginOTP = async (req, res) => {
+  const { email, otp } = req.body;
+  try {
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    const cleanOtp = otp ? String(otp).trim() : '';
+
+    const user = await User.findOne({ email: cleanEmail });
+    if (!user) {
+      return res.status(404).json({ message: 'No account exists with this email' });
+    }
+    if (user.isDeleted) {
+      return res.status(401).json({ message: 'Your account has been deactivated.' });
+    }
+    if (user.isBlocked) {
+      return res.status(403).json({ message: 'Your account has been blocked by the administrator.' });
+    }
+
+    const otpRecord = await OTP.findOne({
+      email: cleanEmail,
+      otp: cleanOtp,
+      expiresAt: { $gt: new Date() }
+    });
+
+    if (!otpRecord) {
+      return res.status(400).json({ message: 'Incorrect OTP or OTP has expired' });
+    }
+
+    // OTP is valid
+    await OTP.deleteMany({ email: cleanEmail });
+
+    // Reset login attempts since successful login
+    user.loginAttempts = 0;
+    user.lockUntil = undefined;
+    
+    if (!user.isVerified) {
+      user.isVerified = true; // Auto verify email if OTP logged in
+    }
+    await user.save();
+
+    const avatar = resolveAvatar(user);
+    await logLogin(req, user);
+    await setAuthCookies(res, req, user._id);
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      avatar,
+      profilePicture: user.profilePicture || avatar,
+      mobile: user.mobile || '',
+      mobileNumber: user.mobileNumber || user.mobile || '',
+      upiId: user.upiId || '',
+      role: user.role,
+      isAppOwner: user.isAppOwner || false,
+      authProvider: user.authProvider || 'local',
+      isMobileVerified: user.isMobileVerified || false,
+      status: user.status || 'active'
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };

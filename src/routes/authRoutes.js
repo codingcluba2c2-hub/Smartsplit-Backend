@@ -5,15 +5,19 @@ const {
   verifyEmail, resendOTP, updateProfile, 
   requestPasswordResetOTP, verifyPasswordResetOTP,
   forgotPassword, verifyForgotPasswordOTP, resetPassword,
-  changePassword, refreshToken, logoutUser
+  changePassword, refreshToken, logoutUser,
+  sendLoginOTP, verifyLoginOTP
 } = require('../controllers/authController');
 const { protect } = require('../middlewares/authMiddleware');
+const { loginLimiter, otpLimiter } = require('../middlewares/rateLimiter');
 
 router.post('/register', registerUser);
-router.post('/login', loginUser);
+router.post('/login', loginLimiter, loginUser);
+router.post('/send-login-otp', otpLimiter, sendLoginOTP);
+router.post('/verify-login-otp', loginLimiter, verifyLoginOTP);
 router.post('/refresh', refreshToken);
 router.post('/logout', logoutUser);
-router.post('/google-login', googleLogin);
+router.post('/google-login', loginLimiter, googleLogin);
 router.post('/verify-email', verifyEmail);
 router.post('/resend-otp', resendOTP);
 router.get('/me', protect, getMe);
