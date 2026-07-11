@@ -5,7 +5,7 @@ const AdminActivityLog = require('../models/AdminActivityLog');
 const logActivity = async (adminId, action, targetModel, targetId, details) => {
   try {
     await AdminActivityLog.create({
-      admin: adminId,
+      adminId,
       action,
       targetModel,
       targetId,

@@ -16,8 +16,7 @@ const adminActivityLogSchema = new mongoose.Schema({
   },
   targetModel: {
     type: String,
-    required: true,
-    enum: ['User', 'Group', 'Expense', 'Settlement', 'Report']
+    required: true
   },
   details: {
     type: mongoose.Schema.Types.Mixed,

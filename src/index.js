@@ -1,4 +1,3 @@
-// index.js (Vercel version)
 const dns = require('dns');
 require('dotenv').config();
 
@@ -20,6 +19,9 @@ const adminRoutes = require('./routes/adminRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const databaseExplorerRoutes = require('./routes/databaseExplorerRoutes');
+const adminRuleRoutes = require('../modules/ai/routes/adminRuleRoutes');
+const aiChatRoutes = require('../modules/ai/routes/chat.routes');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -170,12 +172,18 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/admin/db', databaseExplorerRoutes);
+app.use('/api/admin/ai', adminRuleRoutes);
+app.use('/api/ai-chat', aiChatRoutes);
+
+const knowledgeRoutes = require('../modules/ai/routes/knowledge.routes');
+app.use('/api/ai/knowledge', knowledgeRoutes);
+
 
 // ❌ NO app.listen() here for Vercel
 // But we need it for local development
 const PORT = process.env.PORT || 5000;
 if (process.env.NODE_ENV !== 'production') {
-  server.listen(PORT, async () => {
+  server.listen(PORT, '0.0.0.0', async () => {
     console.log(`Server running on port ${PORT}`);
     try {
       await connectDB();
@@ -186,3 +194,4 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 module.exports = app;
+// Trigger nodemon restart

@@ -48,4 +48,8 @@ router.patch('/notifications/read-all', adminController.markAllNotificationsAsRe
 router.patch('/notifications/:id/read', adminController.markNotificationAsRead);
 router.delete('/notifications/:id', adminController.deleteNotification);
 
+// AI Studio Routes
+const conversationAdminRoutes = require('../../modules/ai/routes/conversationAdmin.routes');
+router.use('/ai/conversations', conversationAdminRoutes);
+
 module.exports = router;
