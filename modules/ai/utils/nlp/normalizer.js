@@ -10,11 +10,15 @@ class Normalizer {
     normalized = normalized.toLowerCase();
     // Unicode cleanup (replace diacritics etc.)
     normalized = normalized.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    // Remove emojis and special non-ASCII unicode
+    normalized = normalized.replace(/[^\x00-\x7F]/g, "");
+    // Normalize punctuation (keep basic punctuation, remove others)
+    normalized = normalized.replace(/[^\w\s.,?!'"-]/g, '');
+    // Remove duplicate characters (more than 2 in a row -> 1)
+    normalized = normalized.replace(/(.)\1{2,}/g, '$1');
     // Remove extra spaces
     normalized = normalized.replace(/\s+/g, ' ').trim();
-    // Emojis could be handled here or removed. We'll keep it simple: just remove non-word chars except spaces
-    normalized = normalized.replace(/[^\w\s]/gi, '');
-    return normalized.trim();
+    return normalized;
   }
 }
 

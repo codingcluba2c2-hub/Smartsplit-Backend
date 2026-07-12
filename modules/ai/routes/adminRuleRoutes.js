@@ -3,6 +3,14 @@ const router = express.Router();
 const greetingsController = require('../controllers/adminGreetingsController');
 const fallbacksController = require('../controllers/adminFallbacksController');
 const historyController = require('../controllers/historyController');
+const traceRoutes = require('../devtrace/TraceRoutes');
+const cacheRoutes = require('./cacheRoutes');
+
+// Mount Dev Trace Routes
+router.use('/trace', traceRoutes);
+
+// Mount Cache Management Routes
+router.use('/cache', cacheRoutes);
 
 // Assume an admin authentication middleware exists. We can mock or omit it if not strictly defined.
 // const { protect, admin } = require('../../auth/middleware');

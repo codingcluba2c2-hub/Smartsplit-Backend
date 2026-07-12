@@ -11,7 +11,18 @@ const init = (server) => {
   });
 
   io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
+    socket.on('joinTraceDebugger', () => {
+      socket.join('trace-debugger');
+      
+      const room = io.sockets.adapter.rooms.get('trace-debugger');
+      const numMembers = room ? room.size : 0;
+      const connectedSockets = io.engine.clientsCount;
+      
+      console.log(`\n[SOCKET] Trace Debugger Joined`);
+      console.log(`[SOCKET] Socket ID: ${socket.id}`);
+      console.log(`[SOCKET] Room Members: ${numMembers}`);
+      console.log(`[SOCKET] Connected Clients: ${connectedSockets}\n`);
+    });
 
     socket.on('joinGroup', (groupId) => {
       socket.join(groupId);
@@ -44,8 +55,21 @@ const emitToGroup = (groupId, event, data) => {
   }
 };
 
+const emitToTraceRoom = (event, data) => {
+  if (io) {
+    const roomName = 'trace-debugger';
+    const room = io.sockets.adapter.rooms.get(roomName);
+    const numMembers = room ? room.size : 0;
+    
+    io.to(roomName).emit(event, data);
+    return numMembers;
+  }
+  return 0;
+};
+
 module.exports = {
   init,
   getIO,
-  emitToGroup
+  emitToGroup,
+  emitToTraceRoom
 };

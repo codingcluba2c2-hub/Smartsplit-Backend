@@ -25,6 +25,10 @@ class ContextManager {
       this.sessions[sessionId].lastIntent = intent;
     }
   }
+
+  clearConversation() {
+    this.sessions = {};
+  }
 }
 
 module.exports = new ContextManager();

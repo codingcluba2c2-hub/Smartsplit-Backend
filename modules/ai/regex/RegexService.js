@@ -1,22 +1,45 @@
+const regexRepo = require('../repositories/RegexRuleRepository');
+const IntentResult = require('../dto/IntentResult');
+
 class RegexService {
   constructor() {
-    this.patterns = {
-      'Email': /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
-      'Phone': /\+?[0-9]{10,14}/g,
-      'Amount': /(?:rs|inr|₹|\$|usd)\s?\d+(?:\.\d+)?|\d+(?:\.\d+)?\s?(?:rs|inr|₹|\$|usd)/gi,
-      'UPI': /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g
-    };
+    this.compiledPatterns = [];
+    this.isLoaded = false;
   }
 
-  match(text) {
-    const matches = [];
-    for (const [entity, regex] of Object.entries(this.patterns)) {
-      const found = text.match(regex);
-      if (found) {
-        matches.push({ entity, values: found });
+  async loadRules() {
+    try {
+      const activeRules = await regexRepo.getAllActive();
+      this.compiledPatterns = [];
+      for (const rule of activeRules) {
+        try {
+          this.compiledPatterns.push({
+            intentName: rule.intentName,
+            regex: new RegExp(rule.pattern, rule.flags || 'i')
+          });
+        } catch (e) {
+          console.error(`[RegexService] Failed to compile regex for intent ${rule.intentName}: ${rule.pattern}`);
+        }
+      }
+      this.isLoaded = true;
+      console.log(`[RegexService] Compiled ${this.compiledPatterns.length} regex rules from MongoDB`);
+    } catch (err) {
+      console.error('[RegexService] Failed to load regex rules:', err);
+      this.isLoaded = true;
+    }
+  }
+
+  async match(text) {
+    if (!this.isLoaded) await this.loadRules();
+    
+    // Check for exact intent matches
+    for (const patternObj of this.compiledPatterns) {
+      if (patternObj.regex.test(text)) {
+        // Return 1.0 confidence since it's a strict regex match
+        return new IntentResult(patternObj.intentName, 1.0, 'Matched strict regex rule');
       }
     }
-    return matches;
+    return new IntentResult('Unknown', 0, 'No regex rules matched');
   }
 }
 

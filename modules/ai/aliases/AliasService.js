@@ -7,20 +7,25 @@ class AliasService {
   }
 
   async loadAliases() {
-    // Basic mock implementation for now to avoid DB coupling in tests
-    // In production, this reads from aliasRepo
-    const activeAliases = [
-      { canonicalConcept: 'expense', synonyms: ['expanse', 'expnse', 'bill', 'payment', 'transaction', 'money'] },
-      { canonicalConcept: 'group', synonyms: ['grp', 'groop', 'grop', 'groups'] }
-    ];
-    
-    this.aliasMap = {};
-    for (const alias of activeAliases) {
-      for (const syn of alias.synonyms) {
-        this.aliasMap[syn.toLowerCase()] = alias.canonicalConcept.toLowerCase();
+    try {
+      const activeAliases = await aliasRepo.getAllActive();
+      this.aliasMap = {};
+      for (const alias of activeAliases) {
+        for (const syn of alias.synonyms) {
+          this.aliasMap[syn.toLowerCase()] = alias.canonicalConcept.toLowerCase();
+        }
       }
+      this.isLoaded = true;
+      console.log(`[AliasService] Loaded ${Object.keys(this.aliasMap).length} aliases from MongoDB`);
+    } catch (error) {
+      console.error('[AliasService] Failed to load aliases from MongoDB:', error);
+      // Fallback to static if DB fails during startup
+      this.aliasMap = {
+        'expanse': 'expense', 'expnse': 'expense', 'bill': 'expense', 'payment': 'expense',
+        'grp': 'group', 'groop': 'group'
+      };
+      this.isLoaded = true;
     }
-    this.isLoaded = true;
   }
 
   async expand(text) {

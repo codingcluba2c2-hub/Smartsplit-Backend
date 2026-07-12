@@ -168,11 +168,11 @@ app.use('/api/groups', groupRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/settlements', settlementRoutes);
 app.use('/api/history', historyRoutes);
+app.use('/api/admin/ai', adminRuleRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/admin/db', databaseExplorerRoutes);
-app.use('/api/admin/ai', adminRuleRoutes);
 app.use('/api/ai-chat', aiChatRoutes);
 
 const knowledgeRoutes = require('../modules/ai/routes/knowledge.routes');
@@ -187,8 +187,18 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`Server running on port ${PORT}`);
     try {
       await connectDB();
+      
+      // Explicitly initialize AI Services after DB connection
+      const aliasService = require('../modules/ai/aliases/AliasService');
+      const greetingService = require('../modules/ai/greetings/GreetingService');
+      const regexService = require('../modules/ai/regex/RegexService');
+      
+      await aliasService.loadAliases();
+      await greetingService.loadGreetings();
+      await regexService.loadRules();
+      
     } catch (err) {
-      console.error('Initial MongoDB connection failed:', err.message);
+      console.error('Initial MongoDB connection or AI Service initialization failed:', err.message);
     }
   });
 }
