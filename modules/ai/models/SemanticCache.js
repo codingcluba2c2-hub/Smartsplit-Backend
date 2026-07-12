@@ -38,4 +38,4 @@ SemanticCacheSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL i
 // Depending on Mongo version/setup, vector indexes might need Atlas Search definition rather than standard compound index, but standard index on the array helps slightly if basic queries are used.
 // SemanticCacheSchema.index({ questionEmbedding: 1 }); 
 
-module.exports = mongoose.model('SemanticCache', SemanticCacheSchema);
+module.exports = mongoose.models.SemanticCache || mongoose.model('SemanticCache', SemanticCacheSchema);

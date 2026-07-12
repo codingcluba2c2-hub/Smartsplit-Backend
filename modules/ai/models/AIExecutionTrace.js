@@ -38,4 +38,4 @@ AIExecutionTraceSchema.index({ sessionId: 1 });
 AIExecutionTraceSchema.index({ userId: 1 });
 AIExecutionTraceSchema.index({ createdAt: -1 });
 
-module.exports = mongoose.model('AIExecutionTrace', AIExecutionTraceSchema);
+module.exports = mongoose.models.AIExecutionTrace || mongoose.model('AIExecutionTrace', AIExecutionTraceSchema);
