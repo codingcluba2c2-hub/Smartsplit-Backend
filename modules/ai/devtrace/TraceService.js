@@ -1,5 +1,5 @@
 const TraceRepository = require('./TraceRepository');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 class TraceService {
   constructor() {
@@ -9,7 +9,7 @@ class TraceService {
 
   createContext(userId, sessionId, rawInput) {
     const context = {
-      traceId: uuidv4(),
+      traceId: crypto.randomUUID(),
       userId,
       sessionId,
       rawInput,
