@@ -99,8 +99,35 @@ class AIPipelineService {
     trace.endStage(sDecision, 'SUCCESS', `Need Context? ${contextRules.requiresDB || contextRules.requiresRAG ? 'YES' : 'NO'}`, 1.0, 'Evaluated by ContextDecisionEngine', contextRules);
     
     // 8. Routing Logic
+    // If the intent is an ACTION, we return an actionTrigger and bypass everything else.
+    if (bestIntent.intent && bestIntent.intent.startsWith('ACTION_')) {
+      trace.recordSkip('Database Lookup', 'Action intent matched');
+      trace.recordSkip('RAG Retrieval', 'Action intent matched');
+      trace.recordSkip('Semantic Cache', 'Action intent matched');
+      trace.recordSkip('Template Engine', 'Action intent matched');
+      trace.recordSkip('Prompt Construction', 'Action intent matched');
+      trace.recordSkip('LLM Router', 'Action intent matched');
+
+      // Strict Enterprise JSON Action Dispatch - NO TEXT
+      finalResponse = ""; 
+      
+      const sFinal = trace.startStage('Final Response');
+      trace.endStage(sFinal, 'SUCCESS', 'Action Dispatched', 1.0, 'Action Executed');
+      await trace.commit('Action Dispatched');
+      
+      return {
+        response: finalResponse,
+        type: 'action',
+        action: bestIntent.intent,
+        payload: {},
+        debug: { 
+          normalizedText: text, intent: bestIntent.intent, confidence: 1.0, reason: `Matched action workflow`, timeMs: Date.now() - startTime,
+          matchedRegex: regexMatches, matchedAliases: aliasResult.matchedAliases, toolsExecuted: false, traceId: trace.traceId, actionTrigger: bestIntent.intent 
+        }
+      };
+    }
     // Only use deterministic formatter if confidence is VERY high, otherwise let LLM handle it with strict context rules.
-    if (bestIntent.confidence >= 0.95 && !['Unknown', 'Database'].includes(bestIntent.intent)) {
+    else if (bestIntent.confidence >= 0.95 && !['Unknown', 'Database'].includes(bestIntent.intent)) {
       trace.recordSkip('Database Lookup', 'Deterministic intent matched');
       trace.recordSkip('RAG Retrieval', 'Deterministic intent matched');
       trace.recordSkip('Semantic Cache', 'Deterministic intent matched');

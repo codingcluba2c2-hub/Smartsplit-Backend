@@ -122,13 +122,15 @@ class HistoryController {
 
       const actualResponse = aiResult.response;
 
-      const assistantMessage = await ConversationHistory.create({
-        conversationId: activeConvId,
-        role: 'assistant',
-        content: actualResponse,
-        createdBy: userId === 'anonymous' ? null : userId,
-      });
-
+      let assistantMessage = null;
+      if (aiResult.type !== 'action') {
+        assistantMessage = await ConversationHistory.create({
+          conversationId: activeConvId,
+          role: 'assistant',
+          content: actualResponse,
+          createdBy: userId === 'anonymous' ? null : userId,
+        });
+      }
 
       res.json({
         conversationId: activeConvId,

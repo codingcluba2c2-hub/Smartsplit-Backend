@@ -8,7 +8,7 @@ async function runTest() {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('Connected to DB');
 
-    const result = await AIPipelineService.processMessage('anonymous', 'session-123', 'Hiiii');
+    const result = await AIPipelineService.processMessage('anonymous', 'session-123', 'create group');
     console.log('API Result:', JSON.stringify(result, null, 2));
 
     const traceId = result.debug.traceId;
