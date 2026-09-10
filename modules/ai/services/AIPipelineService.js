@@ -289,12 +289,21 @@ class AIPipelineService {
           });
         }
       } else {
-        trace.endStage(sRag, 'SKIPPED', null, 0, 'Similarity below threshold');
+        trace.endStage(sRag, 'SKIPPED', null, 0, 'No direct RAG match found; querying LLM');
         trace.recordSkip('Semantic Cache', 'No RAG results');
         trace.recordSkip('Template Engine', 'No RAG results');
-        trace.recordSkip('Prompt Construction', 'No RAG results');
-        trace.recordSkip('LLM Router', 'No RAG results');
-        finalResponse = "I don't have information on this in my knowledge base. Please ask another question or provide more details.";
+        
+        const sBuilder = trace.startStage('Prompt Construction');
+        const promptResult = promptBuilder.buildPrompt(bestIntent.intent, { name: 'User' }, {}, contextRules);
+        trace.endStage(sBuilder, 'SUCCESS', 'Prompt Built', 1.0, 'General LLM Prompt', promptResult.metrics);
+
+        const sLlm = trace.startStage('LLM Router');
+        trace.geminiCalled = true;
+        const llmResult = await llmRouter.generate([
+          { role: 'user', content: promptResult.finalPrompt + `\n\nUser Question: ${text}` }
+        ]);
+        finalResponse = llmResult.content || "I'm SmartSplit AI. How can I assist you today?";
+        trace.endStage(sLlm, 'SUCCESS', finalResponse, 1.0, 'Generated general LLM answer', { provider: 'gemini', tokens: llmResult.usage?.totalTokens });
       }
     }
     else {

@@ -44,13 +44,27 @@ class GreetingService {
   async detect(text) {
     if (!this.isLoaded) await this.loadGreetings();
     
-    if (this.greetings[text]) {
-      const responses = this.greetings[text];
+    const cleanText = (text || '').trim().toLowerCase();
+    if (this.greetings[cleanText]) {
+      const responses = this.greetings[cleanText];
       const randomResponse = responses[Math.floor(Math.random() * responses.length)];
       const result = new IntentResult('Greeting', 0.98, 'Greeting Matched');
       result.payload = randomResponse;
       return result;
     }
+
+    if (/^(hi|hello|hy|hey|hola|greetings|good morning|good afternoon|good evening|who are you|what can you do)[\s!.]*$/i.test(cleanText)) {
+      const responses = [
+        "Hello! Welcome to **SmartSplit AI**. How can I help you manage your expenses today?",
+        "Hi there! I'm **SmartSplit AI**. How can I assist you with balances, groups, or settlements?",
+        "Hey! How can I help you with your SmartSplit account today?"
+      ];
+      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+      const result = new IntentResult('Greeting', 0.98, 'Greeting Matched');
+      result.payload = randomResponse;
+      return result;
+    }
+
     return new IntentResult('Unknown', 0, 'No Greeting match');
   }
 }

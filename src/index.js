@@ -68,14 +68,21 @@ app.use(cookieParser());
 
 // Strict Origin Validation (CSRF Protection)
 app.use((req, res, next) => {
+  const defaultOrigins = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:5000',
+    'http://127.0.0.1:5000',
+    'https://smartsplitakhlaque.vercel.app'
+  ];
   const allowedOrigins = process.env.FRONTEND_URL 
-    ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
-    : ['http://localhost:5173', 'https://smartsplitakhlaque.vercel.app'];
+    ? process.env.FRONTEND_URL.split(',').map(url => url.trim()).concat(defaultOrigins)
+    : defaultOrigins;
   
   const origin = req.headers.origin;
   
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    if (!origin || !allowedOrigins.includes(origin)) {
+    if (origin && !allowedOrigins.includes(origin) && !origin.startsWith('http://192.168.') && !origin.startsWith('http://10.') && !origin.startsWith('http://172.')) {
       return res.status(403).json({ message: 'CSRF violation: Invalid Origin' });
     }
   }

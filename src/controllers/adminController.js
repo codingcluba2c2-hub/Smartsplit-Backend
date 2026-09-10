@@ -644,6 +644,20 @@ exports.forceCompleteSettlement = async (req, res) => {
       details: { amount: settlement.amount, status: settlement.status, reason: ownerCompletionReason }
     });
 
+    // Recalculate group balances and emit real-time socket update
+    try {
+      const { calculateGroupBalances } = require('../services/balanceService');
+      const socketService = require('../services/socketService');
+      const updatedSummary = await calculateGroupBalances(settlement.groupId);
+      socketService.emitToGroup(settlement.groupId.toString(), 'group:balance_updated', {
+        summary: updatedSummary,
+        settlementId: settlement._id,
+        groupId: settlement.groupId
+      });
+    } catch (err) {
+      console.error('Failed to emit group balance update on force completion:', err);
+    }
+
     // Notify Sender
     await Notification.create({
       title: 'Settlement Force Completed',

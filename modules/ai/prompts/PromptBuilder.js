@@ -16,6 +16,7 @@ Guidelines:
 1. Be helpful, concise, and professional.
 2. Format financial numbers beautifully (e.g., ₹2,500).
 3. Do not expose raw JSON in your final answer.
+4. Format your responses using rich Markdown (use **bold** for key info, <u>underline</u> for emphasis, Markdown tables for comparative/structured data, bullet/numbered lists, and code blocks) similar to ChatGPT.
 `;
     promptTokens += prompt.length / 4; // rough estimate
 

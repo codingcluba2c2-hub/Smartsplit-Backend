@@ -71,80 +71,109 @@ const socketService = require('../services/socketService');
 const { calculateGroupBalances } = require('../services/balanceService');
 
 exports.respondSettlement = async (req, res) => {
-  const { action, disputeReason } = req.body;
-  const validActions = ['accept', 'dispute'];
+  let { action, disputeReason } = req.body;
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  // Normalize action names from frontend
+  if (['completed', 'approve', 'accept'].includes(action)) {
+    action = 'accept';
+  } else if (['rejected', 'reject', 'dispute', 'cancel'].includes(action)) {
+    action = 'dispute';
+  }
+
+  const validActions = ['accept', 'dispute'];
+  if (!validActions.includes(action)) {
+    return res.status(400).json({ message: 'Invalid action' });
+  }
+
+  let session = null;
+  let useTransaction = false;
 
   try {
-    const settlement = await Settlement.findById(req.params.id).session(session);
+    session = await mongoose.startSession();
+    session.startTransaction();
+    useTransaction = true;
+  } catch (txErr) {
+    session = null;
+    useTransaction = false;
+  }
+
+  try {
+    const settlementQuery = Settlement.findById(req.params.id);
+    if (useTransaction && session) settlementQuery.session(session);
+    const settlement = await settlementQuery;
+
     if (!settlement) {
-      await session.abortTransaction();
-      session.endSession();
+      if (useTransaction && session) {
+        await session.abortTransaction();
+        session.endSession();
+      }
       return res.status(404).json({ message: 'Settlement request not found' });
     }
-    if (settlement.receiverId.toString() !== req.user._id.toString()) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(403).json({ message: 'Only the receiver can respond to this request' });
+
+    const receiverIdStr = String(settlement.receiverId?._id || settlement.receiverId || '');
+    const payerIdStr = String(settlement.payerId?._id || settlement.payerId || '');
+    const userIdStr = String(req.user?._id || req.user?.id || '');
+
+    const isReceiver = receiverIdStr === userIdStr;
+    const isPayer = payerIdStr === userIdStr;
+    const isAdmin = req.user?.role === 'admin';
+
+    if (!isReceiver && !isPayer && !isAdmin) {
+      if (useTransaction && session) {
+        await session.abortTransaction();
+        session.endSession();
+      }
+      return res.status(403).json({ message: 'Not authorized to respond to this settlement request' });
     }
+
     if (settlement.status !== 'pending') {
-      await session.abortTransaction();
-      session.endSession();
+      if (useTransaction && session) {
+        await session.abortTransaction();
+        session.endSession();
+      }
       return res.status(400).json({ message: 'Settlement request already resolved' });
-    }
-    if (!validActions.includes(action)) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ message: 'Invalid action' });
     }
 
     if (action === 'accept') {
       settlement.status = 'completed';
       settlement.settledAt = new Date();
+      settlement.completedAt = new Date();
       
       await Notification.create([{
         title: 'Settlement Accepted',
-        message: 'Your settlement request has been accepted.',
+        message: 'Your settlement request has been accepted and verified.',
         type: 'success',
         targetId: settlement._id,
         targetModel: 'Settlement',
         recipientRole: 'user',
         recipientId: settlement.payerId
-      }], { session });
+      }], (useTransaction && session) ? { session } : undefined);
     } else if (action === 'dispute') {
-      settlement.status = 'disputed';
+      settlement.status = 'rejected';
       if (disputeReason) {
         settlement.disputeReason = disputeReason;
       }
       
       await Notification.create([{
-        title: 'Settlement Disputed',
-        message: 'A settlement request requires admin review due to a dispute.',
-        type: 'alert',
-        targetId: settlement._id,
-        targetModel: 'Settlement',
-        recipientRole: 'admin'
-      }], { session });
-      
-      await Notification.create([{
-        title: 'Settlement Disputed',
-        message: `Your settlement request was disputed: ${disputeReason || 'No reason provided'}`,
+        title: 'Settlement Request Rejected',
+        message: `Settlement request was rejected: ${disputeReason || 'No reason provided'}`,
         type: 'alert',
         targetId: settlement._id,
         targetModel: 'Settlement',
         recipientRole: 'user',
         recipientId: settlement.payerId
-      }], { session });
+      }], (useTransaction && session) ? { session } : undefined);
     }
     
-    await settlement.save({ session });
+    if (useTransaction && session) {
+      await settlement.save({ session });
+      await session.commitTransaction();
+      session.endSession();
+    } else {
+      await settlement.save();
+    }
 
-    await session.commitTransaction();
-    session.endSession();
-
-    // After transaction succeeds, immediately recalculate balances and emit socket event to invalidate frontend cache
+    // After transaction succeeds, recalculate balances and emit socket event
     if (action === 'accept') {
       try {
         const updatedSummary = await calculateGroupBalances(settlement.groupId);
@@ -160,8 +189,13 @@ exports.respondSettlement = async (req, res) => {
 
     res.json(settlement);
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    res.status(500).json({ message: error.message });
+    if (useTransaction && session) {
+      try {
+        await session.abortTransaction();
+        session.endSession();
+      } catch (e) {}
+    }
+    console.error('Error in respondSettlement:', error);
+    res.status(500).json({ message: error.message || 'Internal server error' });
   }
 };

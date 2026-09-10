@@ -19,8 +19,8 @@ class IntentService {
     if (fastPath.confidence >= 0.8) return fastPath;
     
     // 3. Greetings
-    const greeting = greetingService.detect(text);
-    if (greeting.confidence >= 0.8) return greeting;
+    const greeting = await greetingService.detect(lowerText);
+    if (greeting && greeting.confidence >= 0.8) return greeting;
     
     // 4. FAQ
     const faq = faqService.detect(text);

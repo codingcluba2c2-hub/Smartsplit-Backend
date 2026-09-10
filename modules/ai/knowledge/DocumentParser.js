@@ -1,6 +1,7 @@
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const Papa = require('papaparse');
+const removeMd = require('remove-markdown');
 
 class DocumentParser {
   /**
@@ -21,7 +22,9 @@ class DocumentParser {
         return await this.parseDocx(buffer);
       } else if (mimeType === 'text/csv' || fileName.toLowerCase().endsWith('.csv')) {
         return await this.parseCsv(buffer);
-      } else if (mimeType.startsWith('text/') || fileName.toLowerCase().endsWith('.txt') || fileName.toLowerCase().endsWith('.md')) {
+      } else if (mimeType === 'text/markdown' || fileName.toLowerCase().endsWith('.md')) {
+        return removeMd(buffer.toString('utf-8'));
+      } else if (mimeType.startsWith('text/') || fileName.toLowerCase().endsWith('.txt')) {
         return buffer.toString('utf-8');
       } else {
         throw new Error(`Unsupported file type: ${mimeType} for file ${fileName}`);
