@@ -7,14 +7,14 @@ const generateRegex = (aliases) => {
   if (!aliases || aliases.length === 0) return '';
   
   const processAlias = (alias) => {
-    return alias.split('').map(char => {
-      if (char === ' ') return '\\s+';
-      const escaped = char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return `${escaped}+`;
-    }).join('');
+    const trimmed = (alias || '').trim();
+    if (!trimmed) return '';
+    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return escaped.replace(/\s+/g, '\\s+');
   };
 
-  const regexParts = aliases.map(processAlias);
+  const regexParts = aliases.map(processAlias).filter(Boolean);
+  if (regexParts.length === 0) return '';
   return `(${regexParts.join('|')})`;
 };
 

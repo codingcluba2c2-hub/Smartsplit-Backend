@@ -14,8 +14,8 @@ class IntentService {
     const action = actionDetector.detect(text);
     if (action.confidence >= 1.0) return action;
 
-    // 2. Fast Path
-    const fastPath = fastPathService.detect(text);
+    // 2. Fast Path (Checks static & DB fastpath/faq rules)
+    const fastPath = await fastPathService.detect(text);
     if (fastPath.confidence >= 0.8) return fastPath;
     
     // 3. Greetings
@@ -23,7 +23,7 @@ class IntentService {
     if (greeting && greeting.confidence >= 0.8) return greeting;
     
     // 4. FAQ
-    const faq = faqService.detect(text);
+    const faq = await faqService.detect(text);
     if (faq.confidence >= 0.8) return faq;
     
     // 5. Personal Data (Database Queries)

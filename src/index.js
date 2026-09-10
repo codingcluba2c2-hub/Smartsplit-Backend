@@ -211,4 +211,6 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 module.exports = app;
-// Trigger nodemon restart!
+// Trigger nodemon restart after fixing GreetingService loadGreetings
+
+

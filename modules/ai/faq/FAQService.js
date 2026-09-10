@@ -1,5 +1,6 @@
 const IntentResult = require('../dto/IntentResult');
 const aiConfig = require('../config/aiConfig');
+const greetingRepo = require('../repositories/GreetingRepository');
 
 class FAQService {
   constructor() {
@@ -13,21 +14,31 @@ class FAQService {
     ];
   }
 
-  detect(text) {
-    // 1. Exact Match
-    let match = this.faqs.find(f => f.question === text);
+  async detect(text) {
+    const cleanText = (text || '').trim().toLowerCase();
+
+    // 1. Check DB rules
+    const matchedRule = await greetingRepo.findMatchingRule(text);
+    if (matchedRule) {
+      const result = new IntentResult('FAQ', 0.98, `Matched Rule: ${matchedRule.name}`);
+      result.payload = matchedRule.responseTemplate;
+      return result;
+    }
+
+    // 2. Exact Match
+    let match = this.faqs.find(f => f.question === cleanText);
     if (match) {
       const result = new IntentResult('FAQ', aiConfig.thresholds.FAQ_EXACT_MATCH, 'Exact FAQ Match');
       result.payload = match.answer;
       return result;
     }
     
-    // 2. Keyword/Partial Match (simplified for now)
+    // 3. Keyword/Partial Match
     let bestScore = 0;
     let bestFaq = null;
     
     for (const faq of this.faqs) {
-      const matches = faq.keywords.filter(k => text.includes(k)).length;
+      const matches = faq.keywords.filter(k => cleanText.includes(k)).length;
       if (matches > 0) {
         const score = Math.min((matches / faq.keywords.length) * 100, aiConfig.thresholds.FAQ_NORMALIZED_MATCH);
         if (score > bestScore) {

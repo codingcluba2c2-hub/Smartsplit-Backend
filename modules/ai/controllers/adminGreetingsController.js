@@ -175,27 +175,16 @@ const testGreeting = async (req, res) => {
   try {
     const { input } = req.body;
     const start = Date.now();
+    const greetingRepo = require('../repositories/GreetingRepository');
     
-    const greetings = await Greeting.find({ status: 'enabled' }).sort({ priority: -1 });
-    
-    let matchedGreeting = null;
-    for (const g of greetings) {
-      if (g.regexGenerated) {
-        const regex = new RegExp(g.regexGenerated, 'i');
-        if (regex.test(input)) {
-          matchedGreeting = g;
-          break;
-        }
-      }
-    }
-    
+    const matchedGreeting = await greetingRepo.findMatchingRule(input);
     const executionTime = Date.now() - start;
     
     if (matchedGreeting) {
       res.json({
         matchedRule: matchedGreeting.name,
-        confidence: 95,
-        regex: matchedGreeting.regexGenerated,
+        confidence: 98,
+        regex: matchedGreeting.regexGenerated || null,
         alias: input,
         response: matchedGreeting.responseTemplate,
         executionTime: `${executionTime}ms`

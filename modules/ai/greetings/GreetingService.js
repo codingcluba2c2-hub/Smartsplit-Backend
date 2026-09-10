@@ -25,8 +25,13 @@ class GreetingService {
       const activeGreetings = await greetingRepo.getAllActive();
       this.greetings = {};
       for (const greeting of activeGreetings) {
-        // If there are multiple responses, pick a random one, or store all and pick random at runtime
-        this.greetings[greeting.trigger.toLowerCase()] = greeting.responses;
+        const key = (greeting.trigger || greeting.name || '').toLowerCase();
+        if (key) {
+          const resps = greeting.responses && greeting.responses.length > 0 
+            ? greeting.responses 
+            : [greeting.responseTemplate];
+          this.greetings[key] = resps.filter(Boolean);
+        }
       }
       this.isLoaded = true;
       console.log(`[GreetingService] Loaded ${Object.keys(this.greetings).length} greetings from MongoDB`);
@@ -42,14 +47,14 @@ class GreetingService {
   }
 
   async detect(text) {
-    if (!this.isLoaded) await this.loadGreetings();
-    
     const cleanText = (text || '').trim().toLowerCase();
-    if (this.greetings[cleanText]) {
-      const responses = this.greetings[cleanText];
-      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-      const result = new IntentResult('Greeting', 0.98, 'Greeting Matched');
-      result.payload = randomResponse;
+
+    // Check DB rules for greeting or farewell intent
+    const matchedRule = await greetingRepo.findMatchingRule(text);
+    if (matchedRule && (matchedRule.intent === 'greeting' || matchedRule.intent === 'farewell')) {
+      const intentName = matchedRule.intent === 'greeting' ? 'Greeting' : 'Farewell';
+      const result = new IntentResult(intentName, 0.98, `Matched Greeting Rule: ${matchedRule.name}`);
+      result.payload = matchedRule.responseTemplate;
       return result;
     }
 

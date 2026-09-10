@@ -7,22 +7,22 @@ class PromptSanitizer {
    */
   static sanitize(prompt, intent) {
     const isolatedIntents = ['Greeting', 'Small Talk', 'Farewell', 'Thanks', 'Identity'];
-    
+
     if (!isolatedIntents.includes(intent)) {
-      return { 
-        sanitizedPrompt: prompt, 
-        removedEntities: [], 
-        reason: 'Intent does not require strict isolation.' 
+      return {
+        sanitizedPrompt: prompt,
+        removedEntities: [],
+        reason: 'Intent does not require strict isolation.'
       };
     }
 
     let sanitizedPrompt = prompt;
     const removedEntities = [];
-    
+
     // Fast heuristic pruning using Regex
     const forbiddenPatterns = [
       { regex: /Blue Water Paradise Resort/gi, label: 'Trip Name' },
-      { regex: /Rahul|Amit|Sneha/gi, label: 'User Names' },
+      { regex: /Akhlaque|Amit|Sneha/gi, label: 'User Names' },
       { regex: /\$\d+|\₹\d+|expenses?|settlements?|balances?/gi, label: 'Financial Data' },
       { regex: /Knowledge Base Context:[\s\S]*?(?=\n\n|$)/gi, label: 'RAG Context Block' },
       { regex: /Database Context:[\s\S]*?(?=\n\n|$)/gi, label: 'DB Context Block' },
@@ -44,8 +44,8 @@ class PromptSanitizer {
     return {
       sanitizedPrompt,
       removedEntities,
-      reason: removedEntities.length > 0 
-        ? `Strict isolation enforced for '${intent}'. Pruned leaked entities.` 
+      reason: removedEntities.length > 0
+        ? `Strict isolation enforced for '${intent}'. Pruned leaked entities.`
         : 'Prompt was already clean.'
     };
   }
