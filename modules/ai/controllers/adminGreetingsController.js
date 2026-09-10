@@ -119,12 +119,12 @@ const deleteGreeting = async (req, res) => {
     const { id } = req.params;
     const userId = req.user?._id || null;
     
-    // Soft delete by disabling
-    const greeting = await Greeting.findByIdAndUpdate(id, { status: 'disabled', updatedBy: userId }, { returnDocument: 'after' });
+    const greeting = await Greeting.findByIdAndDelete(id);
+    if (!greeting) return res.status(404).json({ error: 'Greeting not found' });
     
-    await adminRuleService.logAudit('DELETE', 'Greeting', greeting._id, { type: 'SOFT_DELETE' }, userId);
+    await adminRuleService.logAudit('DELETE', 'Greeting', greeting._id, { type: 'DELETE' }, userId);
     
-    res.json(greeting);
+    res.json({ message: 'Greeting deleted successfully', id });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -72,11 +72,12 @@ const deleteFallback = async (req, res) => {
     const { id } = req.params;
     const userId = req.user?._id || null;
     
-    const fallback = await FallbackRule.findByIdAndUpdate(id, { status: 'disabled', updatedBy: userId }, { new: true });
+    const fallback = await FallbackRule.findByIdAndDelete(id);
+    if (!fallback) return res.status(404).json({ error: 'Fallback rule not found' });
     
-    await adminRuleService.logAudit('DELETE', 'FallbackRule', fallback._id, { type: 'SOFT_DELETE' }, userId);
+    await adminRuleService.logAudit('DELETE', 'FallbackRule', fallback._id, { type: 'DELETE' }, userId);
     
-    res.json(fallback);
+    res.json({ message: 'Fallback deleted successfully', id });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
