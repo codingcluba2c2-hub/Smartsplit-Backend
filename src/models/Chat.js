@@ -4,13 +4,20 @@ const chatSchema = new mongoose.Schema({
   groupId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Group',
-    required: true,
+    required: false,
+    index: true
+  },
+  recipientId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: false,
     index: true
   },
   senderId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: true,
+    index: true
   },
   senderName: {
     type: String,
@@ -30,6 +37,11 @@ const chatSchema = new mongoose.Schema({
   fileName: String,
   fileSize: Number,
   duration: Number, // for voice messages
+  isRead: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
   timestamp: {
     type: Date,
     default: Date.now

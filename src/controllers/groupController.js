@@ -2,6 +2,7 @@ const Group = require('../models/Group');
 const User = require('../models/User');
 const Expense = require('../models/Expense');
 const Settlement = require('../models/Settlement');
+const Chat = require('../models/Chat');
 const { calculateGroupSummary } = require('../services/balanceService');
 
 const ensureGroupMember = (group, userId) => group.members.some((member) => {
@@ -205,32 +206,44 @@ exports.getFriends = async (req, res) => {
       }
     };
 
-    safeLog(`\n\n--- GET FRIENDS REQUEST AT ${new Date().toISOString()} ---\n`);
-    safeLog(`LOGGED-IN USER: ${req.user._id} (${req.user.email})\n`);
-    
-    const groups = await Group.find({ 'members.user': req.user._id })
-      .populate('members.user', 'name email avatar upiId mobile');
-    
-    safeLog(`Fetched groups count: ${groups.length}\n`);
     const friendsMap = new Map();
     
+    // 1. Collect friends from shared groups
+    const groups = await Group.find({ 'members.user': req.user._id })
+      .populate('members.user', 'name email avatar upiId mobile');
+
     groups.forEach(group => {
       group.members.forEach(member => {
         const friend = member.user;
-        if (friend) {
-          safeLog(`Checking group member: ${friend.name} (${friend.email}), ID: ${friend._id.toString()}, Mobile: ${friend.mobile}\n`);
+        if (friend && friend._id) {
           if (friend._id.toString() !== req.user._id.toString()) {
-            safeLog(`Adding friend: ${friend.name} (${friend.email}) to map\n`);
             friendsMap.set(friend._id.toString(), friend);
-          } else {
-            safeLog(`Filtering out self: ${friend.name}\n`);
           }
         }
       });
     });
-    
+
+    // 2. Collect friends from direct chat message history
+    const directChats = await Chat.find({
+      $or: [
+        { senderId: req.user._id, recipientId: { $exists: true, $ne: null } },
+        { recipientId: req.user._id }
+      ]
+    }).populate('senderId recipientId', 'name email avatar upiId mobile');
+
+    directChats.forEach(chat => {
+      const sender = chat.senderId;
+      const recipient = chat.recipientId;
+
+      if (sender && sender._id && sender._id.toString() !== req.user._id.toString()) {
+        friendsMap.set(sender._id.toString(), sender);
+      }
+      if (recipient && recipient._id && recipient._id.toString() !== req.user._id.toString()) {
+        friendsMap.set(recipient._id.toString(), recipient);
+      }
+    });
+
     const friends = Array.from(friendsMap.values());
-    safeLog(`Friends returned: ${JSON.stringify(friends.map(f => ({ name: f.name, email: f.email, mobile: f.mobile })))} \n`);
     res.json(friends);
   } catch (error) {
     res.status(500).json({ message: error.message });

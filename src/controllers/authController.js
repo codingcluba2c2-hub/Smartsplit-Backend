@@ -783,3 +783,45 @@ exports.verifyLoginOTP = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.searchUserByEmail = async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ message: 'Email query parameter is required' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Find user by email in database
+    const foundUser = await User.findOne({ 
+      email: cleanEmail,
+      isDeleted: { $ne: true }
+    }).select('name email avatar profilePicture mobile mobileNumber upiId role createdAt');
+
+    if (!foundUser) {
+      return res.status(404).json({ exists: false, message: 'No registered user found with this email address' });
+    }
+
+    if (foundUser._id.toString() === req.user._id.toString()) {
+      return res.status(400).json({ exists: false, message: 'You cannot add yourself as a contact' });
+    }
+
+    const avatarUrl = resolveAvatar(foundUser);
+
+    res.json({
+      exists: true,
+      user: {
+        _id: foundUser._id,
+        name: foundUser.name,
+        email: foundUser.email,
+        avatar: avatarUrl,
+        mobile: foundUser.mobile || foundUser.mobileNumber || '',
+        upiId: foundUser.upiId || ''
+      }
+    });
+  } catch (error) {
+    console.error('Error in searchUserByEmail:', error);
+    res.status(500).json({ message: error.message });
+  }
+};

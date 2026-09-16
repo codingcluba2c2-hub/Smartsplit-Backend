@@ -34,6 +34,30 @@ const init = (server) => {
       console.log(`User ${socket.id} left group ${groupId}`);
     });
 
+    socket.on('joinDirectChat', ({ userId, recipientId }) => {
+      if (userId && recipientId) {
+        const roomName = [userId.toString(), recipientId.toString()].sort().join('_');
+        socket.join(roomName);
+        console.log(`User ${socket.id} (${userId}) joined direct chat room ${roomName}`);
+      }
+    });
+
+    socket.on('leaveDirectChat', ({ userId, recipientId }) => {
+      if (userId && recipientId) {
+        const roomName = [userId.toString(), recipientId.toString()].sort().join('_');
+        socket.leave(roomName);
+        console.log(`User ${socket.id} (${userId}) left direct chat room ${roomName}`);
+      }
+    });
+
+    socket.on('joinUser', (userId) => {
+      if (userId) {
+        const userRoom = `user_${userId.toString()}`;
+        socket.join(userRoom);
+        console.log(`User ${socket.id} joined personal room ${userRoom}`);
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log('User disconnected:', socket.id);
     });
@@ -55,6 +79,12 @@ const emitToGroup = (groupId, event, data) => {
   }
 };
 
+const emitToUser = (userId, event, data) => {
+  if (io && userId) {
+    io.to(`user_${userId.toString()}`).emit(event, data);
+  }
+};
+
 const emitToTraceRoom = (event, data) => {
   if (io) {
     const roomName = 'trace-debugger';
@@ -71,5 +101,6 @@ module.exports = {
   init,
   getIO,
   emitToGroup,
+  emitToUser,
   emitToTraceRoom
 };
