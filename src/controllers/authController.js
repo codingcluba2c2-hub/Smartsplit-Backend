@@ -133,7 +133,8 @@ exports.registerUser = async (req, res) => {
       });
     }
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -193,7 +194,8 @@ exports.verifyEmail = async (req, res) => {
       status: user.status || 'active'
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -213,7 +215,8 @@ exports.resendOTP = async (req, res) => {
     await sendOTP(cleanEmail, otpCode);
     res.json({ message: 'New OTP sent to your email' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -284,7 +287,8 @@ exports.loginUser = async (req, res) => {
       res.status(401).json({ message: 'Invalid email or password' });
     }
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -436,7 +440,8 @@ exports.updateProfile = async (req, res) => {
       status: updatedUser.status
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -453,7 +458,8 @@ exports.requestPasswordResetOTP = async (req, res) => {
     await sendOTP(cleanEmail, otpCode);
     res.json({ message: 'Verification code sent to your email' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -484,7 +490,8 @@ exports.verifyPasswordResetOTP = async (req, res) => {
 
     res.json({ message: 'Password updated successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -512,7 +519,8 @@ exports.forgotPassword = async (req, res) => {
       res.status(500).json({ message: 'Failed to send OTP. Please try again.' });
     }
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -536,7 +544,8 @@ exports.verifyForgotPasswordOTP = async (req, res) => {
     // OTP is valid, return success (don't delete yet, will be deleted on password reset)
     res.json({ message: 'OTP verified successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -582,7 +591,8 @@ exports.resetPassword = async (req, res) => {
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -624,7 +634,8 @@ exports.changePassword = async (req, res) => {
 
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -717,7 +728,8 @@ exports.sendLoginOTP = async (req, res) => {
       res.status(500).json({ message: 'Failed to send OTP. Please try again.' });
     }
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 
@@ -780,7 +792,8 @@ exports.verifyLoginOTP = async (req, res) => {
       status: user.status || 'active'
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message });
   }
 };
 

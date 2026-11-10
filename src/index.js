@@ -115,10 +115,14 @@ if (!cached) {
 // Monitor connection events
 mongoose.connection.on('connected', () => console.log('Mongoose connected to DB'));
 mongoose.connection.on('error', (err) => console.error('Mongoose connection error:', err.message));
-mongoose.connection.on('disconnected', () => console.log('Mongoose disconnected'));
+mongoose.connection.on('disconnected', () => {
+  console.log('Mongoose disconnected');
+  cached.conn = null;
+  cached.promise = null;
+});
 
 async function connectDB() {
-  if (cached.conn) return cached.conn;
+  if (cached.conn && mongoose.connection.readyState === 1) return cached.conn;
 
   if (!cached.promise) {
     const opts = {
