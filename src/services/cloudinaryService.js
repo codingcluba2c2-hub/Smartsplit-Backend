@@ -1,19 +1,36 @@
 const cloudinary = require('cloudinary').v2;
 
-const configureCloudinary = () => {
-  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
-  const apiKey = (process.env.CLOUDINARY_API_KEY || '').trim();
-  const apiSecret = (process.env.CLOUDINARY_API_SECRET || '').trim();
+const cleanEnvValue = (value = '') => {
+  let cleaned = String(value).trim();
+  if (
+    (cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+    (cleaned.startsWith("'") && cleaned.endsWith("'"))
+  ) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+  return cleaned.replace(/(?:\\r|\\n)+$/g, '').trim();
+};
+
+const getCloudinaryCredentials = () => {
+  const cloudName = cleanEnvValue(process.env.CLOUDINARY_CLOUD_NAME);
+  const apiKey = cleanEnvValue(process.env.CLOUDINARY_API_KEY);
+  const apiSecret = cleanEnvValue(process.env.CLOUDINARY_API_SECRET);
 
   if (!cloudName || !apiKey || !apiSecret) {
     throw new Error('Cloudinary credentials are missing in server environment variables');
   }
 
-  cloudinary.config({
+  return {
     cloud_name: cloudName,
     api_key: apiKey,
     api_secret: apiSecret
-  });
+  };
+};
+
+const configureCloudinary = () => {
+  const creds = getCloudinaryCredentials();
+  cloudinary.config(creds);
+  return creds;
 };
 
 const uploadBufferStream = (buffer, options) => {
@@ -28,9 +45,10 @@ const uploadBufferStream = (buffer, options) => {
 
 const uploadToCloudinary = async (fileStr, folderName = 'smartsplit_avatars') => {
   try {
-    configureCloudinary();
+    const creds = configureCloudinary();
 
     const uploadOptions = {
+      ...creds,
       folder: folderName,
       resource_type: 'auto',
       timeout: 55000,
@@ -61,8 +79,13 @@ const uploadToCloudinary = async (fileStr, folderName = 'smartsplit_avatars') =>
       throw new Error('Image upload timed out. Please try a smaller image.');
     }
     const reason = error?.message || error?.error?.message;
+    if (reason && reason.includes('Invalid Signature')) {
+      throw new Error(
+        'Failed to upload image to cloud (Invalid Cloudinary signature — verify CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in deployment environment variables)'
+      );
+    }
     throw new Error(reason ? `Failed to upload image to cloud (${reason})` : 'Failed to upload image to cloud');
   }
 };
 
-module.exports = { uploadToCloudinary };
+module.exports = { uploadToCloudinary, getCloudinaryCredentials, cleanEnvValue };
