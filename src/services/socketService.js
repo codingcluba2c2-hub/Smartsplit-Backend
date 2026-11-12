@@ -97,10 +97,17 @@ const emitToTraceRoom = (event, data) => {
   return 0;
 };
 
+const isUserOnline = (userId) => {
+  if (!io || !userId) return false;
+  const room = io.sockets.adapter.rooms.get(`user_${userId.toString()}`);
+  return Boolean(room && room.size > 0);
+};
+
 module.exports = {
   init,
   getIO,
   emitToGroup,
   emitToUser,
-  emitToTraceRoom
+  emitToTraceRoom,
+  isUserOnline
 };

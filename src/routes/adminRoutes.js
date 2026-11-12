@@ -13,6 +13,7 @@ router.get('/dashboard', adminController.getDashboardStats);
 
 // User Management
 router.get('/users', adminController.getAllUsers);
+router.get('/users/:id/details', adminController.getUserDetails);
 router.put('/users/:id', adminController.updateUser);
 router.patch('/users/:id/block', adminController.blockUser);
 router.patch('/users/:id/unblock', adminController.unblockUser);

@@ -9,6 +9,144 @@ const AdminActivityLog = require('../models/AdminActivityLog');
 const Notification = require('../models/Notification');
 const { calculateGroupSummary } = require('../services/balanceService');
 const { uploadToCloudinary } = require('../services/cloudinaryService');
+const { isUserOnline } = require('../services/socketService');
+
+/**
+ * Batch-aggregates real platform activity metrics and last login telemetry for a list of user IDs.
+ */
+const buildUserStatsMap = async (userIds) => {
+  const statsMap = new Map();
+  if (!userIds.length) return statsMap;
+
+  const objectIds = userIds.map((id) => new mongoose.Types.ObjectId(id));
+  for (const id of objectIds) {
+    statsMap.set(id.toString(), {
+      activity: {
+        totalGroups: 0,
+        totalExpenses: 0,
+        expensesPaidCount: 0,
+        totalSpent: 0,
+        totalShare: 0,
+        totalSettlements: 0,
+        completedSettlements: 0,
+        pendingSettlements: 0,
+        settledVolume: 0,
+        loginCount: 0,
+      },
+      lastLogin: null,
+    });
+  }
+
+  const [groups, expenses, settlements, loginStats] = await Promise.all([
+    Group.find({
+      $or: [{ 'members.user': { $in: objectIds } }, { createdBy: { $in: objectIds } }],
+    })
+      .select('createdBy members.user')
+      .lean(),
+    Expense.find({
+      $or: [
+        { paidBy: { $in: objectIds } },
+        { participants: { $in: objectIds } },
+        { 'splitDetails.user': { $in: objectIds } },
+      ],
+    })
+      .select('amount paidBy participants splitDetails')
+      .lean(),
+    Settlement.find({
+      $or: [{ payerId: { $in: objectIds } }, { receiverId: { $in: objectIds } }],
+    })
+      .select('payerId receiverId amount status')
+      .lean(),
+    LoginLog.aggregate([
+      { $match: { userId: { $in: objectIds } } },
+      { $sort: { timestamp: -1 } },
+      {
+        $group: {
+          _id: '$userId',
+          loginCount: { $sum: 1 },
+          timestamp: { $first: '$timestamp' },
+          ipAddress: { $first: '$ipAddress' },
+          deviceInfo: { $first: '$deviceInfo' },
+        },
+      },
+    ]),
+  ]);
+
+  for (const group of groups) {
+    const memberSet = new Set();
+    if (group.createdBy) memberSet.add(group.createdBy.toString());
+    for (const m of group.members || []) {
+      if (m?.user) memberSet.add(m.user.toString());
+    }
+    for (const uid of memberSet) {
+      const entry = statsMap.get(uid);
+      if (entry) entry.activity.totalGroups += 1;
+    }
+  }
+
+  for (const exp of expenses) {
+    const involved = new Set();
+    const payerId = exp.paidBy?.toString();
+    if (payerId) involved.add(payerId);
+    for (const p of exp.participants || []) {
+      if (p) involved.add(p.toString());
+    }
+    const shareByUser = new Map();
+    for (const split of exp.splitDetails || []) {
+      if (split?.user) {
+        const uid = split.user.toString();
+        involved.add(uid);
+        shareByUser.set(uid, (shareByUser.get(uid) || 0) + (Number(split.amount) || 0));
+      }
+    }
+
+    const fallbackEqualShare =
+      (!exp.splitDetails || exp.splitDetails.length === 0) && (exp.participants?.length || 0) > 0
+        ? (Number(exp.amount) || 0) / exp.participants.length
+        : 0;
+
+    for (const uid of involved) {
+      const entry = statsMap.get(uid);
+      if (!entry) continue;
+      entry.activity.totalExpenses += 1;
+      if (uid === payerId) {
+        entry.activity.expensesPaidCount += 1;
+        entry.activity.totalSpent += Number(exp.amount) || 0;
+      }
+      entry.activity.totalShare += shareByUser.has(uid) ? shareByUser.get(uid) : fallbackEqualShare;
+    }
+  }
+
+  for (const settle of settlements) {
+    const involved = new Set();
+    if (settle.payerId) involved.add(settle.payerId.toString());
+    if (settle.receiverId) involved.add(settle.receiverId.toString());
+    for (const uid of involved) {
+      const entry = statsMap.get(uid);
+      if (!entry) continue;
+      entry.activity.totalSettlements += 1;
+      if (settle.status === 'completed') {
+        entry.activity.completedSettlements += 1;
+        entry.activity.settledVolume += Number(settle.amount) || 0;
+      } else if (settle.status === 'pending') {
+        entry.activity.pendingSettlements += 1;
+      }
+    }
+  }
+
+  for (const log of loginStats) {
+    const entry = statsMap.get(log._id.toString());
+    if (!entry) continue;
+    entry.activity.loginCount = log.loginCount || 0;
+    entry.lastLogin = {
+      timestamp: log.timestamp,
+      ipAddress: log.ipAddress || '',
+      deviceInfo: log.deviceInfo || null,
+    };
+  }
+
+  return statsMap;
+};
 
 // Dashboard stats
 exports.getDashboardStats = async (req, res) => {
@@ -139,38 +277,168 @@ exports.getDashboardStats = async (req, res) => {
 // User Management
 exports.getAllUsers = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '', status = 'all' } = req.query;
-    const skip = (page - 1) * limit;
+    const { page = 1, limit = 10, search = '', status = 'all', role = 'all' } = req.query;
+    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+    const parsedLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 10));
+    const skip = (parsedPage - 1) * parsedLimit;
 
     const filter = {};
-    if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
+    const trimmedSearch = search.trim();
+    if (trimmedSearch) {
+      const orClauses = [
+        { name: { $regex: trimmedSearch, $options: 'i' } },
+        { email: { $regex: trimmedSearch, $options: 'i' } },
+        { mobile: { $regex: trimmedSearch, $options: 'i' } },
+        { mobileNumber: { $regex: trimmedSearch, $options: 'i' } },
       ];
+      if (mongoose.Types.ObjectId.isValid(trimmedSearch)) {
+        orClauses.push({ _id: new mongoose.Types.ObjectId(trimmedSearch) });
+      }
+      filter.$or = orClauses;
     }
-    if (status === 'blocked') {
+
+    if (role && role !== 'all') {
+      filter.role = role;
+    }
+
+    if (status === 'blocked' || status === 'suspended') {
       filter.isBlocked = true;
     } else if (status === 'active') {
       filter.isBlocked = { $ne: true };
+    } else if (status === 'unverified') {
+      filter.isVerified = false;
     }
 
-    const users = await User.find(filter)
-      .select('-password')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .select('-password')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parsedLimit)
+        .lean(),
+      User.countDocuments(filter),
+    ]);
 
-    const total = await User.countDocuments(filter);
+    const statsMap = await buildUserStatsMap(users.map((u) => u._id));
+
+    const enrichedUsers = users.map((u) => {
+      const userStats = statsMap.get(u._id.toString());
+      return {
+        ...u,
+        isOnline: isUserOnline(u._id),
+        activity: userStats?.activity || {
+          totalGroups: 0,
+          totalExpenses: 0,
+          expensesPaidCount: 0,
+          totalSpent: 0,
+          totalShare: 0,
+          totalSettlements: 0,
+          completedSettlements: 0,
+          pendingSettlements: 0,
+          settledVolume: 0,
+          loginCount: 0,
+        },
+        lastLogin: userStats?.lastLogin || null,
+      };
+    });
 
     res.json({
-      users,
+      users: enrichedUsers,
       total,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit)
+      page: parsedPage,
+      pages: Math.ceil(total / parsedLimit) || 1,
     });
   } catch (error) {
     console.error('Error in getAllUsers:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+exports.getUserDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid user ID' });
+    }
+
+    const user = await User.findById(id).select('-password').lean();
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(id);
+
+    const [statsMap, recentGroups, recentExpenses, recentLogins] = await Promise.all([
+      buildUserStatsMap([id]),
+      Group.find({
+        $or: [{ 'members.user': userObjectId }, { createdBy: userObjectId }],
+      })
+        .select('name category members createdAt')
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean(),
+      Expense.find({
+        $or: [
+          { paidBy: userObjectId },
+          { participants: userObjectId },
+          { 'splitDetails.user': userObjectId },
+        ],
+      })
+        .select('description amount category date createdAt groupId paidBy paymentMethod')
+        .populate('groupId', 'name')
+        .populate('paidBy', 'name')
+        .sort({ date: -1, createdAt: -1 })
+        .limit(5)
+        .lean(),
+      LoginLog.find({ userId: userObjectId })
+        .select('timestamp ipAddress deviceInfo')
+        .sort({ timestamp: -1 })
+        .limit(5)
+        .lean(),
+    ]);
+
+    const userStats = statsMap.get(id.toString());
+
+    res.json({
+      user: {
+        ...user,
+        isOnline: isUserOnline(user._id),
+      },
+      activity: userStats?.activity || {
+        totalGroups: 0,
+        totalExpenses: 0,
+        expensesPaidCount: 0,
+        totalSpent: 0,
+        totalShare: 0,
+        totalSettlements: 0,
+        completedSettlements: 0,
+        pendingSettlements: 0,
+        settledVolume: 0,
+        loginCount: 0,
+      },
+      lastLogin: userStats?.lastLogin || null,
+      recentGroups: recentGroups.map((g) => ({
+        _id: g._id,
+        name: g.name,
+        category: g.category || 'Other',
+        memberCount: g.members?.length || 0,
+        createdAt: g.createdAt,
+      })),
+      recentExpenses: recentExpenses.map((e) => ({
+        _id: e._id,
+        description: e.description,
+        amount: e.amount,
+        category: e.category || 'General',
+        paymentMethod: e.paymentMethod || 'UPI',
+        date: e.date || e.createdAt,
+        groupName: e.groupId?.name || 'Group',
+        paidByName: e.paidBy?.name || 'Member',
+        isPayer: e.paidBy?._id?.toString() === id.toString(),
+      })),
+      recentLogins,
+    });
+  } catch (error) {
+    console.error('Error in getUserDetails:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
@@ -955,12 +1223,13 @@ exports.updateUser = async (req, res) => {
     }
 
     const newAvatar = profilePicture !== undefined ? profilePicture : avatar;
-    if (newAvatar !== undefined && newAvatar !== user.profilePicture) {
+    const currentAvatar = user.profilePicture || user.avatar;
+    if (newAvatar !== undefined && newAvatar !== currentAvatar) {
       let finalAvatar = newAvatar;
       if (newAvatar && newAvatar.startsWith('data:image')) {
         finalAvatar = await uploadToCloudinary(newAvatar);
       }
-      changes.profilePicture = { old: user.profilePicture, new: finalAvatar };
+      changes.profilePicture = { old: currentAvatar, new: finalAvatar };
       user.profilePicture = finalAvatar;
       user.avatar = finalAvatar;
     }
@@ -999,7 +1268,11 @@ exports.updateUser = async (req, res) => {
       });
     }
 
-    res.json({ message: 'User updated successfully', user });
+    const safeUser = user.toObject();
+    delete safeUser.password;
+    safeUser.isOnline = isUserOnline(user._id);
+
+    res.json({ message: 'User updated successfully', user: safeUser });
   } catch (error) {
     console.error('Error in updateUser:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
