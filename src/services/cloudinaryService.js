@@ -1,10 +1,20 @@
 const cloudinary = require('cloudinary').v2;
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
+const configureCloudinary = () => {
+  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
+  const apiKey = (process.env.CLOUDINARY_API_KEY || '').trim();
+  const apiSecret = (process.env.CLOUDINARY_API_SECRET || '').trim();
+
+  if (!cloudName || !apiKey || !apiSecret) {
+    throw new Error('Cloudinary credentials are missing in server environment variables');
+  }
+
+  cloudinary.config({
+    cloud_name: cloudName,
+    api_key: apiKey,
+    api_secret: apiSecret
+  });
+};
 
 const uploadBufferStream = (buffer, options) => {
   return new Promise((resolve, reject) => {
@@ -18,12 +28,14 @@ const uploadBufferStream = (buffer, options) => {
 
 const uploadToCloudinary = async (fileStr, folderName = 'smartsplit_avatars') => {
   try {
+    configureCloudinary();
+
     const uploadOptions = {
       folder: folderName,
       resource_type: 'auto',
       timeout: 55000,
       ...(folderName === 'smartsplit_avatars' && {
-        transformation: [{ width: 512, height: 512, crop: 'limit', quality: 'auto', fetch_format: 'auto' }]
+        transformation: [{ width: 512, height: 512, crop: 'limit', quality: 'auto' }]
       })
     };
 
@@ -42,10 +54,14 @@ const uploadToCloudinary = async (fileStr, folderName = 'smartsplit_avatars') =>
     return uploadResponse.secure_url;
   } catch (error) {
     console.error('Cloudinary Upload Error:', error);
+    if (error?.message?.includes('Cloudinary credentials are missing')) {
+      throw error;
+    }
     if (error?.name === 'TimeoutError' || error?.http_code === 499) {
       throw new Error('Image upload timed out. Please try a smaller image.');
     }
-    throw new Error('Failed to upload image to cloud');
+    const reason = error?.message || error?.error?.message;
+    throw new Error(reason ? `Failed to upload image to cloud (${reason})` : 'Failed to upload image to cloud');
   }
 };
 
