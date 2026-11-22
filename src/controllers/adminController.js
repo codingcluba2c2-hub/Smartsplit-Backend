@@ -7,6 +7,8 @@ const Report = require('../models/Report');
 const LoginLog = require('../models/LoginLog');
 const AdminActivityLog = require('../models/AdminActivityLog');
 const Notification = require('../models/Notification');
+const Session = require('../models/Session');
+const OTP = require('../models/OTP');
 const { calculateGroupSummary } = require('../services/balanceService');
 const { uploadToCloudinary } = require('../services/cloudinaryService');
 const { isUserOnline } = require('../services/socketService');
@@ -151,10 +153,10 @@ const buildUserStatsMap = async (userIds) => {
 // Dashboard stats
 exports.getDashboardStats = async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
-    const verifiedUsers = await User.countDocuments({ isVerified: true });
-    const blockedUsers = await User.countDocuments({ isBlocked: true });
-    const pendingUsers = await User.countDocuments({ isVerified: false, isBlocked: false });
+    const totalUsers = await User.countDocuments({ isDeleted: { $ne: true } });
+    const verifiedUsers = await User.countDocuments({ isVerified: true, isDeleted: { $ne: true } });
+    const blockedUsers = await User.countDocuments({ isBlocked: true, isDeleted: { $ne: true } });
+    const pendingUsers = await User.countDocuments({ isVerified: false, isBlocked: false, isDeleted: { $ne: true } });
     
     const totalGroups = await Group.countDocuments();
     const totalExpenses = await Expense.countDocuments();
@@ -282,7 +284,7 @@ exports.getAllUsers = async (req, res) => {
     const parsedLimit = Math.max(1, Math.min(200, parseInt(limit, 10) || 10));
     const skip = (parsedPage - 1) * parsedLimit;
 
-    const filter = {};
+    const filter = { isDeleted: { $ne: true } };
     const trimmedSearch = search.trim();
     if (trimmedSearch) {
       const orClauses = [
@@ -556,14 +558,31 @@ exports.updateUserUpi = async (req, res) => {
 exports.deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid user ID' });
+    }
+
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: 'User not found' });
-    
-    user.isDeleted = true;
-    user.deletedAt = new Date();
-    user.deletedBy = req.user._id;
-    user.status = 'suspended';
-    await user.save();
+
+    if (req.user && req.user._id && req.user._id.toString() === id.toString()) {
+      return res.status(400).json({ message: 'You cannot delete your own admin account' });
+    }
+
+    if (user.isAppOwner) {
+      return res.status(403).json({ message: 'App owner account cannot be deleted' });
+    }
+
+    // Clean up related records
+    await Promise.allSettled([
+      Session.deleteMany({ userId: id }),
+      Notification.deleteMany({ user: id }),
+      LoginLog.deleteMany({ userId: id }),
+      OTP.deleteMany({ email: user.email }),
+      Group.updateMany({ 'members.user': id }, { $pull: { members: { user: id } } }),
+    ]);
+
+    await User.findByIdAndDelete(id);
 
     await AdminActivityLog.create({
       adminId: req.user._id,
@@ -573,7 +592,7 @@ exports.deleteUser = async (req, res) => {
       details: { username: user.name, email: user.email }
     });
 
-    res.json({ message: 'User account deactivated successfully' });
+    res.json({ message: 'User deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
