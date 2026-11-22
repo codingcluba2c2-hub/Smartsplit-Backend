@@ -1183,10 +1183,149 @@ exports.getLoginLogs = async (req, res) => {
   }
 };
 
+// Admin User Create
+exports.createUser = async (req, res) => {
+  try {
+    const {
+      name,
+      email,
+      password,
+      mobile,
+      mobileNumber,
+      upiId,
+      avatar,
+      profilePicture,
+      role = 'user',
+      status = 'active',
+      isBlocked,
+      isVerified = true
+    } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Full name is required' });
+    }
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({ message: 'Email address is required' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+      return res.status(400).json({ message: 'Please provide a valid email address' });
+    }
+
+    const existingUser = await User.findOne({ email: cleanEmail });
+    if (existingUser) {
+      return res.status(400).json({ message: 'A user with this email address already exists' });
+    }
+
+    // Password handling: use admin-provided password or auto-generate a secure random temp password
+    let plainPassword = (password || '').trim();
+    let isTempPassword = false;
+    if (!plainPassword) {
+      const crypto = require('crypto');
+      const randomPart = crypto.randomBytes(4).toString('hex');
+      plainPassword = `Temp@${randomPart}`;
+      isTempPassword = true;
+    } else if (plainPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    if (role && !['user', 'admin'].includes(role)) {
+      return res.status(400).json({ message: 'Invalid role' });
+    }
+
+    const finalStatus = status || (isBlocked ? 'suspended' : 'active');
+    if (!['active', 'suspended'].includes(finalStatus)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const finalMobile = (mobileNumber !== undefined ? mobileNumber : mobile) || '';
+
+    let finalAvatar = profilePicture || avatar;
+    if (finalAvatar && finalAvatar.startsWith('data:image')) {
+      finalAvatar = await uploadToCloudinary(finalAvatar);
+    }
+
+    const cleanUpi = (upiId || '').trim();
+    if (cleanUpi && !/^[a-zA-Z0-9._-]+@[a-zA-Z]+$/.test(cleanUpi)) {
+      return res.status(400).json({ message: 'Please provide a valid UPI ID (e.g. username@bank)' });
+    }
+
+    const newUser = new User({
+      name: name.trim(),
+      email: cleanEmail,
+      password: plainPassword,
+      mobile: finalMobile,
+      mobileNumber: finalMobile || null,
+      upiId: cleanUpi,
+      avatar: finalAvatar,
+      profilePicture: finalAvatar,
+      role: role || 'user',
+      status: finalStatus,
+      isBlocked: finalStatus === 'suspended',
+      isVerified: Boolean(isVerified),
+      authProvider: 'local'
+    });
+
+    await newUser.save();
+
+    await AdminActivityLog.create({
+      adminId: req.user?._id || newUser._id,
+      action: 'CREATE_USER',
+      targetId: newUser._id,
+      targetModel: 'User',
+      details: {
+        username: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        status: newUser.status
+      }
+    });
+
+    const safeUser = newUser.toObject();
+    delete safeUser.password;
+    safeUser.isOnline = false;
+    safeUser.activity = {
+      totalGroups: 0,
+      totalExpenses: 0,
+      expensesPaidCount: 0,
+      totalSpent: 0,
+      totalShare: 0,
+      totalSettlements: 0,
+      completedSettlements: 0,
+      pendingSettlements: 0,
+      settledVolume: 0,
+      loginCount: 0
+    };
+    safeUser.lastLogin = null;
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: safeUser,
+      tempPassword: isTempPassword ? plainPassword : null
+    });
+  } catch (error) {
+    console.error('Error in createUser:', error);
+    const statusCode = error.name === 'ValidationError' ? 400 : 500;
+    res.status(statusCode).json({ message: error.message || 'Server error' });
+  }
+};
+
 // Admin User Edit
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Gracefully handle "new" if sent as PUT /users/new
+    if (id === 'new') {
+      return exports.createUser(req, res);
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid user ID' });
+    }
+
     const { name, email, mobileNumber, mobile, avatar, profilePicture, role, status, isBlocked } = req.body;
 
     const user = await User.findById(id);

@@ -215,6 +215,6 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 module.exports = app;
-// Trigger nodemon restart after fixing GreetingService loadGreetings
+// Trigger nodemon restart after adding admin createUser route (2026-11-22)
 
 
