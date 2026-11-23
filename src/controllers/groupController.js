@@ -4,6 +4,7 @@ const Expense = require('../models/Expense');
 const Settlement = require('../models/Settlement');
 const Chat = require('../models/Chat');
 const { calculateGroupSummary } = require('../services/balanceService');
+const emailService = require('../services/emailService');
 
 const ensureGroupMember = (group, userId) => group.members.some((member) => {
   const memberId = member.user && member.user._id ? member.user._id.toString() : member.user.toString();
@@ -36,7 +37,7 @@ exports.createGroup = async (req, res) => {
       createdBy: req.user._id
     });
 
-    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar upiId mobile' });
+    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar upiId mobile mobileNumber createdAt' });
     res.status(201).json(populatedGroup);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -48,7 +49,7 @@ exports.getGroups = async (req, res) => {
     const groups = await Group.find({ 'members.user': req.user._id })
       .sort({ createdAt: -1 })
       .populate([
-        { path: 'members.user', select: 'name email avatar upiId mobile' },
+        { path: 'members.user', select: 'name email avatar upiId mobile mobileNumber createdAt' },
         { path: 'createdBy', select: 'name' }
       ]);
 
@@ -71,7 +72,7 @@ exports.getGroupById = async (req, res) => {
   try {
     const group = await Group.findById(req.params.id)
       .populate([
-        { path: 'members.user', select: 'name email avatar upiId mobile' },
+        { path: 'members.user', select: 'name email avatar upiId mobile mobileNumber createdAt' },
         { path: 'createdBy', select: 'name' }
       ]);
 
@@ -114,7 +115,7 @@ exports.getGroupById = async (req, res) => {
 
 exports.getGroupMembers = async (req, res) => {
   try {
-    const group = await Group.findById(req.params.id).populate('members.user', 'name email avatar upiId mobile');
+    const group = await Group.findById(req.params.id).populate('members.user', 'name email avatar upiId mobile mobileNumber createdAt');
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
     const isMember = ensureGroupMember(group, req.user._id.toString());
@@ -146,7 +147,7 @@ exports.addMember = async (req, res) => {
     group.members.push({ user: userToAdd._id, role: 'member', joinedAt: new Date() });
     await group.save();
 
-    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar upiId mobile' });
+    const populatedGroup = await Group.populate(group, { path: 'members.user', select: 'name email avatar upiId mobile mobileNumber createdAt' });
     res.json(populatedGroup.members);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -379,5 +380,44 @@ exports.getGroupPayments = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+exports.sendGroupReportEmail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { recipientEmail, note, subject, pdfBase64, summary } = req.body;
+
+    if (!recipientEmail) {
+      return res.status(400).json({ message: 'Recipient email is required' });
+    }
+
+    const group = await Group.findById(id);
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    // Verify requesting user is a member of the group
+    const isMember = group.members.some(
+      (m) => (m.user?._id || m.user || '').toString() === req.user._id.toString()
+    );
+    if (!isMember) {
+      return res.status(403).json({ message: 'Access denied: not a group member' });
+    }
+
+    await emailService.sendReportEmail({
+      to: recipientEmail,
+      groupName: group.name,
+      reportId: `SSR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${id.slice(-4).toUpperCase()}`,
+      summary: summary || {},
+      note: note || '',
+      pdfBase64: pdfBase64 || null,
+      senderName: req.user?.name || 'A group member'
+    });
+
+    res.json({ success: true, message: `Report successfully emailed to ${recipientEmail}` });
+  } catch (error) {
+    console.error('Error sending report email:', error);
+    res.status(500).json({ message: error.message || 'Failed to send report email' });
   }
 };

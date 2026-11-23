@@ -10,7 +10,8 @@ const {
   getFriends,
   updateGroup,
   deleteGroup,
-  getGroupPayments
+  getGroupPayments,
+  sendGroupReportEmail
 } = require('../controllers/groupController');
 const { protect } = require('../middlewares/authMiddleware');
 
@@ -26,5 +27,6 @@ router.delete('/:id', deleteGroup);
 router.get('/:id/members', getGroupMembers);
 router.post('/:id/add-member', addMember);
 router.delete('/:id/members', removeMember);
+router.post('/:id/send-report-email', sendGroupReportEmail);
 
 module.exports = router;
