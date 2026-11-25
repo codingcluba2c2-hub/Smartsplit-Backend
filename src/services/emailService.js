@@ -44,11 +44,15 @@ const sendOTP = async (email, otp) => {
   return transporter.sendMail(mailOptions);
 };
 
-const sendReportEmail = async ({ to, groupName, reportId, summary, note, pdfBase64, senderName }) => {
+const sendReportEmail = async ({ to, groupName, reportId, subject, summary, note, pdfBase64, senderName }) => {
+  const emailSubject = (subject && subject.trim())
+    ? subject.trim()
+    : `📊 Official Financial Report - ${groupName} [${reportId || 'STATEMENT'}]`;
+
   const mailOptions = {
     from: `"SmartSplit Enterprise" <${process.env.EMAIL_USER || 'no-reply@smartsplit.app'}>`,
     to: to,
-    subject: `📊 Official Financial Report - ${groupName} [${reportId || 'STATEMENT'}]`,
+    subject: emailSubject,
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 650px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
         
@@ -120,11 +124,22 @@ const sendReportEmail = async ({ to, groupName, reportId, summary, note, pdfBase
   };
 
   if (pdfBase64) {
-    const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:image\/[^;]+;base64,/, '');
+    const rawPayload = String(pdfBase64).trim();
+    const base64Payload = rawPayload.includes('base64,')
+      ? rawPayload.slice(rawPayload.indexOf('base64,') + 7)
+      : rawPayload.replace(/^data:[^;]+(?:;[^;]+)*;base64,/i, '');
+    const cleanBase64 = base64Payload.replace(/\s+/g, '');
+    const pdfBuffer = Buffer.from(cleanBase64, 'base64');
+
+    if (pdfBuffer.length < 100 || pdfBuffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+      throw new Error('Invalid PDF attachment payload. Please regenerate the report.');
+    }
+
     mailOptions.attachments.push({
       filename: `SmartSplit_${(groupName || 'Report').replace(/[^a-zA-Z0-9]/g, '_')}_Statement.pdf`,
-      content: Buffer.from(cleanBase64, 'base64'),
-      contentType: 'application/pdf'
+      content: pdfBuffer,
+      contentType: 'application/pdf',
+      contentDisposition: 'attachment'
     });
   }
 

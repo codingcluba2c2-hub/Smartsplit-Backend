@@ -409,6 +409,7 @@ exports.sendGroupReportEmail = async (req, res) => {
       to: recipientEmail,
       groupName: group.name,
       reportId: `SSR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${id.slice(-4).toUpperCase()}`,
+      subject: subject || '',
       summary: summary || {},
       note: note || '',
       pdfBase64: pdfBase64 || null,
