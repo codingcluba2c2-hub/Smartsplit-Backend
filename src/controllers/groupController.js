@@ -5,6 +5,7 @@ const Settlement = require('../models/Settlement');
 const Chat = require('../models/Chat');
 const { calculateGroupSummary } = require('../services/balanceService');
 const emailService = require('../services/emailService');
+const { isUserOnline } = require('../services/socketService');
 
 const ensureGroupMember = (group, userId) => group.members.some((member) => {
   const memberId = member.user && member.user._id ? member.user._id.toString() : member.user.toString();
@@ -59,7 +60,12 @@ exports.getGroups = async (req, res) => {
         Settlement.find({ groupId: group._id })
       ]);
       const summary = calculateGroupSummary(expenses, settlements, group);
-      return { ...group.toObject(), summary };
+      return {
+        ...group.toObject(),
+        summary,
+        expensesCount: expenses.length,
+        settlementsCount: settlements.length
+      };
     }));
 
     res.json(groupsWithSummary);
@@ -188,7 +194,7 @@ exports.getFriends = async (req, res) => {
             ]
           }
         ]
-      }).select('name email avatar upiId mobile').limit(10);
+      }).select('name email avatar upiId mobile lastSeen').limit(10);
       return res.json(users);
     }
 
@@ -211,7 +217,7 @@ exports.getFriends = async (req, res) => {
     
     // 1. Collect friends from shared groups
     const groups = await Group.find({ 'members.user': req.user._id })
-      .populate('members.user', 'name email avatar upiId mobile');
+      .populate('members.user', 'name email avatar upiId mobile lastSeen');
 
     groups.forEach(group => {
       group.members.forEach(member => {
@@ -230,7 +236,7 @@ exports.getFriends = async (req, res) => {
         { senderId: req.user._id, recipientId: { $exists: true, $ne: null } },
         { recipientId: req.user._id }
       ]
-    }).populate('senderId recipientId', 'name email avatar upiId mobile');
+    }).populate('senderId recipientId', 'name email avatar upiId mobile lastSeen');
 
     directChats.forEach(chat => {
       const sender = chat.senderId;
@@ -244,7 +250,14 @@ exports.getFriends = async (req, res) => {
       }
     });
 
-    const friends = Array.from(friendsMap.values());
+    const friends = Array.from(friendsMap.values()).map((friend) => {
+      const obj = typeof friend.toObject === 'function' ? friend.toObject() : { ...friend };
+      return {
+        ...obj,
+        isOnline: isUserOnline(obj._id),
+        lastSeen: obj.lastSeen || null
+      };
+    });
     res.json(friends);
   } catch (error) {
     res.status(500).json({ message: error.message });

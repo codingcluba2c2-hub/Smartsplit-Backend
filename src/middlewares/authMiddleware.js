@@ -27,6 +27,12 @@ const protect = async (req, res, next) => {
     if (req.user.isBlocked) {
       return res.status(403).json({ message: 'Your account has been blocked by the administrator.' });
     }
+
+    // Update lastSeen (throttled to once per 60s) for accurate presence across HTTP & serverless
+    const now = Date.now();
+    if (!req.user.lastSeen || now - new Date(req.user.lastSeen).getTime() > 60000) {
+      User.updateOne({ _id: req.user._id }, { $set: { lastSeen: new Date(now) } }).catch(() => {});
+    }
     
     next();
   } catch (error) {

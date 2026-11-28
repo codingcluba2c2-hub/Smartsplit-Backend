@@ -11,7 +11,11 @@ const {
   uploadDirectMedia,
   getUnreadChatCounts,
   markDirectMessagesAsRead,
-  getRecentDirectChats
+  getRecentDirectChats,
+  clearDirectChat,
+  editDirectMessage,
+  deleteDirectMessage,
+  forwardDirectMessage
 } = require('../controllers/chatController');
 
 console.log('[CHAT ROUTES] Loading and registering Direct Chat routes...');
@@ -20,6 +24,12 @@ console.log('[CHAT ROUTES] Loading and registering Direct Chat routes...');
 router.get('/recent-chats', protect, getRecentDirectChats);
 router.get('/unread-counts', protect, getUnreadChatCounts);
 router.post('/direct/:recipientId/read', protect, markDirectMessagesAsRead);
+
+// Direct Message Actions (Edit, Delete, Forward, Clear)
+router.post('/direct/forward', protect, forwardDirectMessage);
+router.patch('/direct/message/:messageId', protect, editDirectMessage);
+router.delete('/direct/message/:messageId', protect, deleteDirectMessage);
+router.delete('/direct/:recipientId/clear', protect, clearDirectChat);
 
 // Direct User-to-User Chat Routes
 router.get('/direct/:recipientId', protect, getDirectChatMessages);

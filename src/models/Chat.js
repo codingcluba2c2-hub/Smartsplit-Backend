@@ -42,6 +42,26 @@ const chatSchema = new mongoose.Schema({
     default: false,
     index: true
   },
+  isEdited: {
+    type: Boolean,
+    default: false
+  },
+  editedAt: {
+    type: Date
+  },
+  isForwarded: {
+    type: Boolean,
+    default: false
+  },
+  isDeletedForEveryone: {
+    type: Boolean,
+    default: false
+  },
+  deletedFor: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    index: true
+  }],
   timestamp: {
     type: Date,
     default: Date.now

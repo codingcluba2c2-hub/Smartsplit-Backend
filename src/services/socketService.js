@@ -1,6 +1,9 @@
 const socketIO = require('socket.io');
+const User = require('../models/User');
 
 let io;
+// Map<userIdStr, Set<socketId>> to track multi-tab online presence accurately
+const onlineUsers = new Map();
 
 const init = (server) => {
   io = socketIO(server, {
@@ -52,13 +55,47 @@ const init = (server) => {
 
     socket.on('joinUser', (userId) => {
       if (userId) {
-        const userRoom = `user_${userId.toString()}`;
+        const userIdStr = userId.toString();
+        const userRoom = `user_${userIdStr}`;
         socket.join(userRoom);
+        socket.userId = userIdStr;
+
+        if (!onlineUsers.has(userIdStr)) {
+          onlineUsers.set(userIdStr, new Set());
+        }
+        const userSockets = onlineUsers.get(userIdStr);
+        const wasOffline = userSockets.size === 0;
+        userSockets.add(socket.id);
+
+        if (wasOffline) {
+          const now = new Date();
+          User.updateOne({ _id: userIdStr }, { $set: { lastSeen: now } }).catch(() => {});
+          io.emit('userPresenceUpdate', {
+            userId: userIdStr,
+            isOnline: true,
+            lastSeen: now.toISOString()
+          });
+        }
         console.log(`User ${socket.id} joined personal room ${userRoom}`);
       }
     });
 
     socket.on('disconnect', () => {
+      const userIdStr = socket.userId;
+      if (userIdStr && onlineUsers.has(userIdStr)) {
+        const userSockets = onlineUsers.get(userIdStr);
+        userSockets.delete(socket.id);
+        if (userSockets.size === 0) {
+          onlineUsers.delete(userIdStr);
+          const now = new Date();
+          User.updateOne({ _id: userIdStr }, { $set: { lastSeen: now } }).catch(() => {});
+          io.emit('userPresenceUpdate', {
+            userId: userIdStr,
+            isOnline: false,
+            lastSeen: now.toISOString()
+          });
+        }
+      }
       console.log('User disconnected:', socket.id);
     });
   });
@@ -98,8 +135,13 @@ const emitToTraceRoom = (event, data) => {
 };
 
 const isUserOnline = (userId) => {
-  if (!io || !userId) return false;
-  const room = io.sockets.adapter.rooms.get(`user_${userId.toString()}`);
+  if (!userId) return false;
+  const userIdStr = userId.toString();
+  if (onlineUsers.has(userIdStr) && onlineUsers.get(userIdStr).size > 0) {
+    return true;
+  }
+  if (!io) return false;
+  const room = io.sockets.adapter.rooms.get(`user_${userIdStr}`);
   return Boolean(room && room.size > 0);
 };
 

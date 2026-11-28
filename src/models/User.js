@@ -114,6 +114,10 @@ const userSchema = new mongoose.Schema({
   },
   lockUntil: {
     type: Date
+  },
+  lastSeen: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true
