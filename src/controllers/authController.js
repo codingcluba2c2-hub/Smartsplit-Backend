@@ -5,6 +5,7 @@ const LoginLog = require('../models/LoginLog');
 const useragent = require('useragent');
 const { sendOTP } = require('../services/emailService');
 const { uploadToCloudinary } = require('../services/cloudinaryService');
+const { isUserOnline } = require('../services/socketService');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -810,7 +811,7 @@ exports.searchUserByEmail = async (req, res) => {
     const foundUser = await User.findOne({ 
       email: cleanEmail,
       isDeleted: { $ne: true }
-    }).select('name email avatar profilePicture mobile mobileNumber upiId role createdAt');
+    }).select('name email avatar profilePicture mobile mobileNumber upiId role lastSeen updatedAt createdAt');
 
     if (!foundUser) {
       return res.status(404).json({ exists: false, message: 'No registered user found with this email address' });
@@ -830,7 +831,9 @@ exports.searchUserByEmail = async (req, res) => {
         email: foundUser.email,
         avatar: avatarUrl,
         mobile: foundUser.mobile || foundUser.mobileNumber || '',
-        upiId: foundUser.upiId || ''
+        upiId: foundUser.upiId || '',
+        isOnline: isUserOnline(foundUser._id),
+        lastSeen: foundUser.lastSeen || foundUser.updatedAt || foundUser.createdAt || null
       }
     });
   } catch (error) {

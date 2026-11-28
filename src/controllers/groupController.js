@@ -180,9 +180,22 @@ exports.removeMember = async (req, res) => {
   }
 };
 
+const resolveEffectiveLastSeen = (userObj, latestChatActivityMs) => {
+  const recordedMs = userObj?.lastSeen ? new Date(userObj.lastSeen).getTime() : 0;
+  const activityMs = Number.isFinite(latestChatActivityMs) ? latestChatActivityMs : 0;
+  const primaryMs = Math.max(recordedMs || 0, activityMs || 0);
+  if (primaryMs > 0) {
+    return new Date(primaryMs);
+  }
+  const fallbackVal = userObj?.updatedAt || userObj?.createdAt || null;
+  return fallbackVal ? new Date(fallbackVal) : null;
+};
+
 exports.getFriends = async (req, res) => {
   const { search } = req.query;
   try {
+    const userPresenceFields = 'name email avatar upiId mobile lastSeen updatedAt createdAt';
+
     if (search) {
       const users = await User.find({
         $and: [
@@ -194,8 +207,18 @@ exports.getFriends = async (req, res) => {
             ]
           }
         ]
-      }).select('name email avatar upiId mobile lastSeen').limit(10);
-      return res.json(users);
+      }).select(userPresenceFields).limit(10);
+
+      return res.json(
+        users.map((u) => {
+          const obj = u.toObject();
+          return {
+            ...obj,
+            isOnline: isUserOnline(obj._id),
+            lastSeen: resolveEffectiveLastSeen(obj, 0)
+          };
+        })
+      );
     }
 
     const fs = require('fs');
@@ -214,10 +237,11 @@ exports.getFriends = async (req, res) => {
     };
 
     const friendsMap = new Map();
+    const latestFriendActivityMap = new Map();
     
     // 1. Collect friends from shared groups
     const groups = await Group.find({ 'members.user': req.user._id })
-      .populate('members.user', 'name email avatar upiId mobile lastSeen');
+      .populate('members.user', userPresenceFields);
 
     groups.forEach(group => {
       group.members.forEach(member => {
@@ -230,20 +254,29 @@ exports.getFriends = async (req, res) => {
       });
     });
 
-    // 2. Collect friends from direct chat message history
+    // 2. Collect friends and their latest message timestamp from direct chat history
     const directChats = await Chat.find({
       $or: [
         { senderId: req.user._id, recipientId: { $exists: true, $ne: null } },
         { recipientId: req.user._id }
       ]
-    }).populate('senderId recipientId', 'name email avatar upiId mobile lastSeen');
+    }).populate('senderId recipientId', userPresenceFields);
 
     directChats.forEach(chat => {
       const sender = chat.senderId;
       const recipient = chat.recipientId;
 
       if (sender && sender._id && sender._id.toString() !== req.user._id.toString()) {
-        friendsMap.set(sender._id.toString(), sender);
+        const senderIdStr = sender._id.toString();
+        friendsMap.set(senderIdStr, sender);
+
+        const msgTime = chat.timestamp || chat.createdAt;
+        if (msgTime) {
+          const msgMs = new Date(msgTime).getTime();
+          if (Number.isFinite(msgMs) && msgMs > (latestFriendActivityMap.get(senderIdStr) || 0)) {
+            latestFriendActivityMap.set(senderIdStr, msgMs);
+          }
+        }
       }
       if (recipient && recipient._id && recipient._id.toString() !== req.user._id.toString()) {
         friendsMap.set(recipient._id.toString(), recipient);
@@ -252,10 +285,11 @@ exports.getFriends = async (req, res) => {
 
     const friends = Array.from(friendsMap.values()).map((friend) => {
       const obj = typeof friend.toObject === 'function' ? friend.toObject() : { ...friend };
+      const idStr = obj._id.toString();
       return {
         ...obj,
         isOnline: isUserOnline(obj._id),
-        lastSeen: obj.lastSeen || null
+        lastSeen: resolveEffectiveLastSeen(obj, latestFriendActivityMap.get(idStr) || 0)
       };
     });
     res.json(friends);
